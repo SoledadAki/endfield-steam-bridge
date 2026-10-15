@@ -1,6 +1,6 @@
 # Endfield Steam Bridge
 
-让《明日方舟：终末地》官服通过 Steam 游戏库启动，无需下载国际服，也无需 Steam++。
+让《明日方舟：终末地》官服通过 Steam 游戏库启动，无需下载国际服。
 
 下载程序：进入本仓库的 **Releases**，下载 `EndfieldSteamBridge-0.1.1-win-x64.zip`，解压运行 `EndfieldSteamBridge.exe`。
 

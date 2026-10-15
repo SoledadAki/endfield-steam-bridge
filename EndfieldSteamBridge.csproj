@@ -11,6 +11,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <Optimize>true</Optimize>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\EndfieldSteamBridge.ico</ApplicationIcon>
     <CodePage>65001</CodePage>
   </PropertyGroup>
   <ItemGroup>
@@ -18,6 +19,7 @@
     <Reference Include="System.Windows.Forms" /><Reference Include="System.Web.Extensions" /><Reference Include="System.Management" />
     <Compile Include="src\*.cs" />
     <EmbeddedResource Include="assets\background.png"><LogicalName>EndfieldSteamBridge.Background</LogicalName></EmbeddedResource>
+    <None Include="assets\EndfieldSteamBridge.ico" />
     <None Include="app.manifest" /><None Include="README.md" /><None Include="LICENSE" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
