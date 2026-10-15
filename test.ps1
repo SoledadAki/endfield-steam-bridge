@@ -8,3 +8,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
 & $testExe
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 
+# Node.js is optional for contributors; the released app does not require it.
+$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if ($nodeCommand) {
+    $scriptFixture = Join-Path $PSScriptRoot 'dist\launcher-scripts.test.json'
+    & $testExe --export-scripts $scriptFixture
+    if ($LASTEXITCODE -ne 0) { throw 'Script fixture export failed.' }
+    & $nodeCommand.Source (Join-Path $PSScriptRoot 'tests\launcher-button.test.js') $scriptFixture
+    if ($LASTEXITCODE -ne 0) { throw 'Launcher button tests failed.' }
+} else {
+    Write-Output 'Node.js not installed; launcher button scenarios skipped.'
+}
+

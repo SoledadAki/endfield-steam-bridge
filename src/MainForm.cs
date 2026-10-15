@@ -12,7 +12,8 @@ namespace EndfieldSteamBridge
     {
         private readonly Bitmap backgroundArt;
         private readonly Color ink = Color.FromArgb(32, 45, 57), blue = Color.FromArgb(26, 112, 180), muted = Color.FromArgb(92, 108, 120);
-        private Label account, client, installed, status;
+        private Label account, client, installed, status, headline;
+        private ComboBox server;
         private TextBox launcher, game;
         private Button enable, restore, refresh, chooseLauncher, chooseGame;
         private DetectionResult current;
@@ -24,33 +25,50 @@ namespace EndfieldSteamBridge
             DoubleBuffered = true;
             ResizeRedraw = true;
             Text = "Endfield Steam Bridge";
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Microsoft YaHei UI", 9.5f);
             ForeColor = ink; BackColor = Color.FromArgb(240, 243, 245);
-            StartPosition = FormStartPosition.CenterScreen; ClientSize = new Size(820, 710);
-            MinimumSize = new Size(820, 745); AutoScaleMode = AutoScaleMode.Dpi;
+            StartPosition = FormStartPosition.CenterScreen; ClientSize = new Size(820, 750);
+            MinimumSize = new Size(820, 785); AutoScaleMode = AutoScaleMode.Dpi;
             var layout = new BufferedLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(32, 24, 32, 20), ColumnCount = 1, RowCount = 7 };
             foreach (int height in new[] { 32, 64, 44 }) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             foreach (int height in new[] { 64, 64, 28 }) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             Controls.Add(layout);
             layout.Controls.Add(MakeLabel("ENDFIELD  /  STEAM BRIDGE                                  v" + App.Version, 10, muted), 0, 0);
-            layout.Controls.Add(MakeLabel("官服终末地接入Steam启动", 26, ink), 0, 1);
+            headline = MakeLabel("官服终末地接入Steam启动", 26, ink); layout.Controls.Add(headline, 0, 1);
             layout.Controls.Add(MakeLabel("使用已有国服客户端 · 自动启动 · Steam 计时与原生叠加层", 10, muted), 0, 2);
-            var card = new BufferedLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(184, Color.White), Padding = new Padding(20, 14, 20, 10), ColumnCount = 1, RowCount = 9, Margin = new Padding(0) };
-            foreach (int h in new[] { 25, 40, 25, 33, 42, 42, 25, 36 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
+            var card = new BufferedLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(184, Color.White), Padding = new Padding(20, 14, 20, 10), ColumnCount = 1, RowCount = 10, Margin = new Padding(0) };
+            foreach (int h in new[] { 25, 40, 25, 40, 33, 42, 42, 25, 36 }) card.RowStyles.Add(new RowStyle(SizeType.Absolute, h));
             card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.Controls.Add(card, 0, 3);
             card.Controls.Add(MakeLabel("01   STEAM 账号与游戏库", 10, muted), 0, 0);
             account = MakeLabel("正在检测…", 11, ink); card.Controls.Add(account, 0, 1);
             card.Controls.Add(MakeLabel("02   国服客户端", 10, muted), 0, 2);
-            client = MakeLabel("正在查找鹰角启动器与国服…", 10, ink); card.Controls.Add(client, 0, 3);
-            card.Controls.Add(PathRow("启动器", out launcher, out chooseLauncher), 0, 4);
-            card.Controls.Add(PathRow("国服", out game, out chooseGame), 0, 5);
-            card.Controls.Add(MakeLabel("03   载入状态", 10, muted), 0, 6);
-            installed = MakeLabel("尚未载入", 10, ink); card.Controls.Add(installed, 0, 7);
+            var serverRow = new BufferedLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, ColumnCount = 2, Margin = new Padding(0, 0, 0, 6) };
+            serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60)); serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            serverRow.Controls.Add(MakeLabel("服务器", 9, muted), 0, 0);
+            server = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230, Margin = new Padding(0, 3, 0, 0) };
+            server.Items.AddRange(GameChannel.All); server.SelectedItem = GameChannel.Official;
+            if (File.Exists(App.ConfigPath))
+            {
+                try { server.SelectedItem = GameChannel.Get(App.Load<RuntimeConfig>(App.ConfigPath).ChannelId); }
+                catch (Exception) { /* Normal detection will report an unreadable existing config. */ }
+            }
+            serverRow.Controls.Add(server, 1, 0); card.Controls.Add(serverRow, 0, 3);
+            client = MakeLabel("正在查找鹰角启动器与国服…", 10, ink); card.Controls.Add(client, 0, 4);
+            card.Controls.Add(PathRow("启动器", out launcher, out chooseLauncher), 0, 5);
+            card.Controls.Add(PathRow("客户端", out game, out chooseGame), 0, 6);
+            card.Controls.Add(MakeLabel("03   载入状态", 10, muted), 0, 7);
+            installed = MakeLabel("尚未载入", 10, ink); card.Controls.Add(installed, 0, 8);
             chooseLauncher.Click += delegate { Choose(true); }; chooseGame.Click += delegate { Choose(false); };
+            server.SelectedIndexChanged += async delegate
+            {
+                if (busy) return;
+                launcher.Clear(); game.Clear(); await RefreshDetection();
+            };
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(0, 12, 0, 0), Margin = new Padding(0) };
-            enable = MakeButton("一键载入国服", 190, true); restore = MakeButton("卸载并恢复 Steam", 190, false); refresh = MakeButton("重新检测", 126, false);
+            enable = MakeButton("一键载入国服", 190, true); restore = MakeButton("撤回载入国服", 190, false); refresh = MakeButton("重新检测", 126, false);
             actions.Controls.AddRange(new Control[] { enable, restore, refresh }); layout.Controls.Add(actions, 0, 4);
             enable.Click += async delegate { await Mutate(false); }; restore.Click += async delegate { await Mutate(true); }; refresh.Click += async delegate { await RefreshDetection(); };
             status = MakeLabel("首次使用请先登录 Steam，并将《明日方舟：终末地》添加入库。", 9.5f, muted);
@@ -58,9 +76,11 @@ namespace EndfieldSteamBridge
             var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0) };
             var library = new LinkLabel { Text = "打开 Steam 游戏库", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, Margin = new Padding(0, 0, 22, 0) };
             library.LinkClicked += delegate { Process.Start("steam://nav/games/details/" + App.AppId); };
-            var logs = new LinkLabel { Text = "本地记录与备份", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, Margin = new Padding(0) };
+            var logs = new LinkLabel { Text = "本地记录与备份", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, Margin = new Padding(0, 0, 22, 0) };
             logs.LinkClicked += delegate { Directory.CreateDirectory(App.Home); Process.Start("explorer.exe", Arguments.Quote(App.Home)); };
-            footer.Controls.Add(library); footer.Controls.Add(logs); layout.Controls.Add(footer, 0, 6);
+            var project = new LinkLabel { Text = "项目已开源！喜欢的话请给该项目点个⭐", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, LinkBehavior = LinkBehavior.HoverUnderline, Cursor = Cursors.Hand, Margin = new Padding(0) };
+            project.LinkClicked += delegate { Process.Start(new ProcessStartInfo("https://github.com/SoledadAki/endfield-steam-bridge") { UseShellExecute = true }); };
+            footer.Controls.Add(library); footer.Controls.Add(logs); footer.Controls.Add(project); layout.Controls.Add(footer, 0, 6);
             Shown += async delegate { if (!previewRendering) await RefreshDetection(); };
             FormClosing += delegate(object s, FormClosingEventArgs e) { if (busy) { e.Cancel = true; status.Text = "正在处理，请等待当前操作完成。"; } };
             SetBusy(true);
@@ -116,28 +136,31 @@ namespace EndfieldSteamBridge
         private void SetBusy(bool value)
         {
             busy = value;
-            refresh.Enabled = chooseLauncher.Enabled = chooseGame.Enabled = !value;
+            refresh.Enabled = chooseLauncher.Enabled = chooseGame.Enabled = server.Enabled = !value;
             bool stateExists = File.Exists(App.StatePath);
-            enable.Enabled = !value && !stateExists && current != null && current.Account != null && current.Account.Known && current.Account.Owned && Detection.ValidLauncher(current.Launcher) && Detection.ValidGame(current.Game);
+            enable.Enabled = !value && !stateExists && current != null && current.Account != null && current.Account.Known && current.Account.Owned && current.ClientReady;
             restore.Enabled = !value && stateExists;
         }
         private async Task RefreshDetection()
         {
             SetBusy(true); status.Text = "正在读取当前 Steam 账号与国服安装位置…";
             string l = String.IsNullOrWhiteSpace(launcher.Text) ? null : launcher.Text, g = String.IsNullOrWhiteSpace(game.Text) ? null : game.Text;
-            try { current = await Task.Run(() => Detection.Scan(l, g)); Populate(); }
+            string channelId = ((GameChannel)server.SelectedItem).Id;
+            try { current = await Task.Run(() => Detection.Scan(l, g, channelId)); Populate(); }
             finally { SetBusy(false); }
         }
         private void Populate()
         {
             var a = current.Account;
+            var channel = (GameChannel)server.SelectedItem;
+            headline.Text = channel == GameChannel.Official ? "官服终末地接入Steam启动" : "B服终末地接入Steam启动";
             account.Text = a == null || !a.Known ? (a == null ? "Steam 未就绪" : a.Error) : (a.Owned ? "已拥有终末地  ·  " : "尚未拥有终末地  ·  ") + (a.Name ?? a.SteamId.ToString());
             account.ForeColor = a != null && a.Known && a.Owned ? blue : Color.FromArgb(162, 85, 30);
             launcher.Text = current.Launcher ?? launcher.Text; game.Text = current.Game ?? game.Text;
             client.Text = current.GameStatus ?? "等待 Steam 检测完成";
             var state = current.Installation;
-            installed.Text = state == null ? "尚未载入。原来的 Steam 游戏文件会保留。" : state.Phase == "enabled" ? "已载入国服 · 卸载后" + (state.WasInstalled ? "恢复原国际服。" : "恢复“安装”按钮。") : "上次操作尚未完成，请点击“卸载并恢复 Steam”还原。";
-            status.Text = current.Error ?? (a == null || !a.Known ? "请确认 Steam 已在线登录，再点“重新检测”。" : !a.Owned ? "请先在 Steam 商店将终末地免费添加入库，再重新检测。" : "载入或卸载时会正常退出并重启 Steam；请先关闭游戏和鹰角启动器。\nSteam 需要以管理员身份运行，工具重启 Steam 时会使用此权限。");
+            installed.Text = state == null ? "尚未载入。原来的 Steam 游戏文件会保留。" : state.Phase == "enabled" ? "已载入" + GameChannel.Get(state.ChannelId).Name : "上次操作尚未完成，请点击“撤回载入国服”还原。";
+            status.Text = current.Error ?? (a == null || !a.Known ? "请确认 Steam 已在线登录，再点“重新检测”。" : !a.Owned ? "请先在 Steam 商店将终末地免费添加入库，再重新检测。" : "载入或撤回时会正常退出并重启 Steam；请先关闭游戏和鹰角启动器。\nSteam 需要以管理员身份运行，工具重启 Steam 时会使用此权限。");
         }
         private async Task Mutate(bool uninstall)
         {
@@ -147,7 +170,7 @@ namespace EndfieldSteamBridge
             try
             {
                 if (uninstall) await Task.Run(() => InstallService.Restore(report)); else await Task.Run(() => InstallService.Enable(current, report));
-                outcome = uninstall ? "已卸载并恢复 Steam。等待客户端启动后，可检查游戏库按钮。" : "载入完成。等待 Steam 启动完成后，点击终末地的“开始游戏”。";
+                outcome = uninstall ? "已撤回国服载入并恢复 Steam。等待客户端启动后，可检查游戏库按钮。" : "载入完成。等待 Steam 启动完成后，点击终末地的“开始游戏”。";
             }
             catch (Exception e) { outcome = e.Message; MessageBox.Show(this, e.Message, "操作未完成", MessageBoxButtons.OK, MessageBoxIcon.Information); }
             finally
@@ -157,9 +180,9 @@ namespace EndfieldSteamBridge
                 Populate(); status.Text = outcome; SetBusy(false);
             }
         }
-        public void SavePreview(string path)
+        public void SavePreview(string path, string channelId = null)
         {
-            previewRendering = true; CreateControl(); current = Detection.Scan(null, null); Populate(); SetBusy(false); Show(); ActiveControl = refresh; launcher.SelectionLength = 0; Application.DoEvents();
+            previewRendering = true; server.SelectedItem = GameChannel.Get(channelId); CreateControl(); current = Detection.Scan(null, null, ((GameChannel)server.SelectedItem).Id); Populate(); SetBusy(false); Show(); ActiveControl = refresh; launcher.SelectionLength = 0; Application.DoEvents();
             using (var bitmap = new Bitmap(Width, Height)) { DrawToBitmap(bitmap, new Rectangle(0, 0, Width, Height)); bitmap.Save(path); }
             Hide();
         }

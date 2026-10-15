@@ -24,6 +24,7 @@ internal static class BridgeRuntime
     private static RuntimeConfig Config;
     private static string Launcher { get { return Config.Launcher; } }
     private static string Game { get { return Config.Game; } }
+    private static GameChannel Channel { get { return GameChannel.Get(Config.ChannelId); } }
     private static string TaskName { get { return Config.TaskName; } }
     private static int Port;
     private static readonly string RequestPath = Path.Combine(Root, "request.json");
@@ -71,8 +72,10 @@ internal static class BridgeRuntime
         bool gameObserved = false;
         try
         {
-            if (!File.Exists(Game)) throw new FileNotFoundException("找不到国服客户端。", Game);
-            Log("bridge", "启动；SteamAppId=" + Environment.GetEnvironmentVariable("SteamAppId"));
+            bool ready;
+            string clientStatus = Detection.ClientStatus(Launcher, Game, Channel.Id, out ready);
+            if (!ready) throw new InvalidOperationException(clientStatus);
+            Log("bridge", "启动 " + Channel.Name + "；SteamAppId=" + Environment.GetEnvironmentVariable("SteamAppId"));
             if (GameRunning()) throw new InvalidOperationException("国服已在运行。请正常退出后再从 Steam 启动。");
             if (!GameRunning())
             {
@@ -98,7 +101,7 @@ internal static class BridgeRuntime
                     request.LauncherPid = launcher.Id;
                     request.LauncherStartTicks = ownedLaunchers[launcher.Id];
                     WriteJson(RequestPath, request);
-                    Log("bridge", "由 Steam 进程链打开官方启动器 PID=" + launcher.Id);
+                    Log("bridge", "由 Steam 进程链打开" + Channel.Name + "启动器 PID=" + launcher.Id);
                 }
                 using (var task = Process.Start(new ProcessStartInfo
                 {
@@ -129,7 +132,11 @@ internal static class BridgeRuntime
                     TrackLaunchers(originalLaunchers, ownedLaunchers);
                     if (DateTime.UtcNow >= nextOverlayCheck)
                     {
-                        RemoveLauncherOverlay(ownedLaunchers);
+                        // Bilibili's platform/crash reporter can create another UI
+                        // after the game opens. Include this session's descendants.
+                        var overlayTargets = new Dictionary<int, long>(ownedLaunchers);
+                        TrackSession(overlayTargets);
+                        RemoveLauncherOverlay(overlayTargets);
                         nextOverlayCheck = DateTime.UtcNow.AddSeconds(5);
                     }
                 }
@@ -182,7 +189,7 @@ internal static class BridgeRuntime
         try
         {
             if (!BridgeAlive(request)) return 0;
-            Status(request, "preparing", "准备官方启动器。");
+            Status(request, "preparing", "准备" + Channel.Name + "启动器。");
             if (GameRunning()) { Status(request, "started", "国服已经运行。"); return 0; }
 
             // These variables apply only to this launcher and its child processes.
@@ -194,7 +201,7 @@ internal static class BridgeRuntime
             while (DateTime.UtcNow < deadline && BridgeAlive(request))
             {
                 if (GameRunning()) { Status(request, "started", "已检测到国服。"); return 0; }
-                endpoint = FindGamePage();
+                endpoint = FindGamePage(Port, Launcher, Channel);
                 if (endpoint == null) { Thread.Sleep(500); continue; }
                 using (var cdp = new Cdp(endpoint))
                 {
@@ -203,11 +210,11 @@ internal static class BridgeRuntime
                         if (GameRunning()) { Status(request, "started", "已检测到国服。"); return 0; }
                         // DOM click follows the launcher's own React/native event path.
                         // Exact CN app identity, ready label and overlay hit-test must all match.
-                        string state = cdp.Evaluate(ClickStartScript);
+                        string state = cdp.Evaluate(Channel.StartScript(true));
                         if (state != lastState) { Log("assist", "按钮状态：" + state); lastState = state; }
                         if (state == "clicked")
                         {
-                            Status(request, "clicked", "已自动触发官方开始游戏按钮。");
+                            Status(request, "clicked", "已自动触发" + Channel.Name + "开始游戏按钮。");
                             var gameDeadline = DateTime.UtcNow.AddMinutes(2);
                             while (DateTime.UtcNow < gameDeadline && BridgeAlive(request))
                             {
@@ -215,7 +222,7 @@ internal static class BridgeRuntime
                                 Thread.Sleep(500);
                             }
                             if (!BridgeAlive(request)) return 0;
-                            throw new TimeoutException("已点击官方开始游戏，但尚未检测到国服。请查看启动器中的更新、提示或登录要求。");
+                            throw new TimeoutException("已点击开始游戏，但尚未检测到国服。请查看启动器中的更新、提示或登录要求。");
                         }
                         Thread.Sleep(700);
                     }
@@ -276,7 +283,7 @@ internal static class BridgeRuntime
         try
         {
             var candidates = new List<int[]>();
-            using (var searcher = new ManagementObjectSearcher("SELECT ProcessId, ParentProcessId FROM Win32_Process WHERE Name='Launcher.exe' OR Name='Games.exe' OR Name='QtWebEngineProcess.exe' OR Name='Endfield.exe' OR Name='UnityCrashHandler64.exe'"))
+            using (var searcher = new ManagementObjectSearcher("SELECT ProcessId, ParentProcessId FROM Win32_Process WHERE Name='Launcher.exe' OR Name='Games.exe' OR Name='QtWebEngineProcess.exe' OR Name='Endfield.exe' OR Name='UnityCrashHandler64.exe' OR Name='PCGamePlatform.exe' OR Name='PlatformProcess.exe' OR Name='game_security_protection.exe' OR Name='BLWebBrowser.exe'"))
             using (var rows = searcher.Get())
                 foreach (ManagementObject row in rows)
                     using (row) candidates.Add(new[] { Convert.ToInt32(row["ProcessId"]), Convert.ToInt32(row["ParentProcessId"]) });
@@ -299,26 +306,11 @@ internal static class BridgeRuntime
         catch (ManagementException error) { Log("watch", "读取本轮进程树失败：" + error.Message); }
     }
 
-    private const string ClickStartScript = @"(function() {
-        const p = new URLSearchParams(location.hash.replace(/^#\??/, ''));
-        if (p.get('app_code') !== '6LL0KJuqHBVz33WK' || p.get('region') !== 'cn' || p.get('is_game') !== 'true') return 'wrong-page';
-        const visible = e => !!(e.offsetWidth && e.offsetHeight && e.getClientRects().length);
-        const nodes = Array.from(document.querySelectorAll('.clamp-text-2')).filter(visible);
-        const ready = nodes.filter(e => e.textContent.trim() === '开始游戏');
-        if (ready.length !== 1) return 'not-ready: ' + nodes.map(e => e.textContent.trim()).join(' / ').slice(0, 180);
-        const e = ready[0], target = e.closest('.cursor-pointer');
-        if (!target || target.closest('.cursor-not-allowed,[disabled],[aria-disabled=true]')) return 'disabled';
-        const r = e.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
-        if (!top || !target.contains(top)) return 'covered';
-        e.click();
-        return 'clicked';
-    })()";
-
-    private static string FindGamePage()
+    internal static string FindGamePage(int port, string launcher, GameChannel channel)
     {
         try
         {
-            var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + Port + "/json/list");
+            var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port + "/json/list");
             request.Proxy = null; request.Timeout = 1000; request.ReadWriteTimeout = 1000;
             using (var response = request.GetResponse())
             using (var reader = new StreamReader(response.GetResponseStream()))
@@ -330,10 +322,9 @@ internal static class BridgeRuntime
                     var page = item as Dictionary<string, object>;
                     if (page == null || !page.ContainsKey("url") || !page.ContainsKey("webSocketDebuggerUrl")) continue;
                     string url = Convert.ToString(page["url"]);
-                    if (!url.StartsWith("file:///", StringComparison.OrdinalIgnoreCase) || !url.Contains("/res/web/") ||
-                        !url.Contains("app_code=6LL0KJuqHBVz33WK") || !url.Contains("region=cn") || !url.Contains("is_game=true")) continue;
+                    if (!channel.MatchesPage(url, launcher)) continue;
                     var endpoint = new Uri(Convert.ToString(page["webSocketDebuggerUrl"]));
-                    if (endpoint.Scheme == "ws" && endpoint.Host == "127.0.0.1" && endpoint.Port == Port) return endpoint.AbsoluteUri;
+                    if (endpoint.Scheme == "ws" && endpoint.Host == "127.0.0.1" && endpoint.Port == port) return endpoint.AbsoluteUri;
                 }
             }
         }
@@ -341,7 +332,7 @@ internal static class BridgeRuntime
         return null;
     }
 
-    private sealed class Cdp : IDisposable
+    internal sealed class Cdp : IDisposable
     {
         private readonly ClientWebSocket socket = new ClientWebSocket();
         private int nextId;

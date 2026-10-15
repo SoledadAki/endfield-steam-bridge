@@ -16,16 +16,16 @@ namespace EndfieldSteamBridge
         private readonly string home;
         public string StatePath { get { return Path.Combine(home, "installation.json"); } }
         public InstallFiles(string dataDirectory) { home = dataDirectory; }
-        public Installation Prepare(string steam, string manifest, string exe, Metadata metadata, ulong owner, bool legacy)
+        public Installation Prepare(string steam, string manifest, string exe, Metadata metadata, ulong owner, bool legacy, string channelId = null)
         {
-            if (File.Exists(StatePath)) throw new InvalidOperationException("已有载入记录，请先卸载并恢复 Steam。");
+            if (File.Exists(StatePath)) throw new InvalidOperationException("已有载入记录，请先点击“撤回载入国服”。");
             if (!String.Equals(metadata.Executable, "Endfield.exe", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Steam 启动文件已变化，请更新工具后重试。");
             string library = Path.GetDirectoryName(manifest);
             string directory = Path.Combine(library, "common", "Endfield Steam CN Bridge");
             if (Directory.Exists(directory)) throw new IOException("桥接目录已存在，请先处理旧安装：" + directory);
             string backup = Path.Combine(home, "backups", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(backup);
-            var state = new Installation { Version = App.Version, SteamRoot = steam, ManifestPath = manifest,
+            var state = new Installation { ChannelId = GameChannel.Get(channelId).Id, Version = App.Version, SteamRoot = steam, ManifestPath = manifest,
                 OriginalManifestBackup = Path.Combine(backup, "original.acf"), PreviousManifestBackup = Path.Combine(backup, "previous.acf"),
                 ManagedManifestBackup = Path.Combine(backup, "managed.acf"), BridgeDirectory = directory,
                 Token = Guid.NewGuid().ToString("N"), TaskName = App.TaskName, WasInstalled = File.Exists(manifest) && !legacy, Phase = "prepared", Executable = metadata.Executable };
@@ -114,7 +114,9 @@ namespace EndfieldSteamBridge
             // Recheck ownership immediately before changing Steam, including account switches.
             var account = SteamAccount.ProbeIsolated(scan.SteamRoot);
             if (!account.Known || !account.Owned) throw new InvalidOperationException(account.Error ?? "当前 Steam 账号尚未拥有《明日方舟：终末地》，请先在商店免费添加入库。");
-            if (!Detection.ValidLauncher(scan.Launcher) || !Detection.ValidGame(scan.Game)) throw new InvalidOperationException("国服路径未通过检测。");
+            bool ready;
+            string clientStatus = Detection.ClientStatus(scan.Launcher, scan.Game, scan.ChannelId, out ready);
+            if (!ready) throw new InvalidOperationException(clientStatus);
             var metadata = KeyValues.ReadAppInfo(Path.Combine(scan.SteamRoot, "appcache", "appinfo.vdf"));
             string manifest = FindManifest(scan.SteamRoot);
             bool legacy = IsLegacy(manifest);
@@ -126,8 +128,8 @@ namespace EndfieldSteamBridge
                 progress("备份原始状态并安装桥接…");
                 Directory.CreateDirectory(Path.GetDirectoryName(App.RuntimeExe));
                 if (!Detection.Same(System.Reflection.Assembly.GetExecutingAssembly().Location, App.RuntimeExe)) File.Copy(System.Reflection.Assembly.GetExecutingAssembly().Location, App.RuntimeExe, true);
-                state = files.Prepare(scan.SteamRoot, manifest, App.RuntimeExe, metadata, account.SteamId, legacy);
-                App.Save(App.ConfigPath, new RuntimeConfig { Launcher = Path.GetFullPath(scan.Launcher), Game = Path.GetFullPath(scan.Game), SteamRoot = scan.SteamRoot, TaskName = state.TaskName });
+                state = files.Prepare(scan.SteamRoot, manifest, App.RuntimeExe, metadata, account.SteamId, legacy, scan.ChannelId);
+                App.Save(App.ConfigPath, new RuntimeConfig { ChannelId = state.ChannelId, Launcher = Path.GetFullPath(scan.Launcher), Game = Path.GetFullPath(scan.Game), SteamRoot = scan.SteamRoot, TaskName = state.TaskName });
                 RegisterTask(state.TaskName); taskCreated = true;
                 files.Commit(state);
             }
@@ -153,7 +155,7 @@ namespace EndfieldSteamBridge
                 if (File.Exists(App.ConfigPath)) File.Delete(App.ConfigPath);
             }
             finally { StartSteam(state.SteamRoot); }
-            progress(state.WasInstalled ? "已卸载桥接，恢复原来的 Steam 客户端。" : "已卸载桥接，Steam 将恢复为“安装”。");
+            progress(state.WasInstalled ? "已撤回国服载入，恢复原来的 Steam 客户端。" : "已撤回国服载入，Steam 将恢复为“安装”。");
         }
         public static string FindManifest(string steam)
         {

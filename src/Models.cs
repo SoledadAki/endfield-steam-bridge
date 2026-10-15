@@ -7,7 +7,7 @@ namespace EndfieldSteamBridge
 {
     internal static class App
     {
-        public const string Version = "0.1.1";
+        public const string Version = "0.2.0";
         public const uint AppId = 4732690;
         public static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
         public static readonly string Home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EndfieldSteamBridge");
@@ -27,6 +27,7 @@ namespace EndfieldSteamBridge
     }
     public sealed class RuntimeConfig
     {
+        public string ChannelId { get; set; }
         public string Launcher { get; set; }
         public string Game { get; set; }
         public string SteamRoot { get; set; }
@@ -35,6 +36,7 @@ namespace EndfieldSteamBridge
     }
     public sealed class Installation
     {
+        public string ChannelId { get; set; }
         public string Version { get; set; }
         public string SteamRoot { get; set; }
         public string ManifestPath { get; set; }
@@ -59,6 +61,8 @@ namespace EndfieldSteamBridge
     }
     internal sealed class DetectionResult
     {
+        public string ChannelId;
+        public bool ClientReady;
         public string SteamRoot;
         public Ownership Account;
         public string Launcher;
