@@ -1,0 +1,24 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
+    <ProjectGuid>{C00CA607-FFCF-4496-9BEA-5F2414E1AE20}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>EndfieldSteamBridge</RootNamespace>
+    <AssemblyName>EndfieldSteamBridge</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Optimize>true</Optimize>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <CodePage>65001</CodePage>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" /><Reference Include="System.Web.Extensions" /><Reference Include="System.Management" />
+    <Compile Include="src\*.cs" />
+    <EmbeddedResource Include="assets\background.png"><LogicalName>EndfieldSteamBridge.Background</LogicalName></EmbeddedResource>
+    <None Include="app.manifest" /><None Include="README.md" /><None Include="LICENSE" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
