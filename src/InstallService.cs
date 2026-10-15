@@ -6,7 +6,6 @@ using System.Linq;
 using System.Security;
 using System.Text;
 using System.Threading;
-using Microsoft.Win32;
 
 namespace EndfieldSteamBridge
 {
@@ -176,9 +175,9 @@ namespace EndfieldSteamBridge
         }
         private static void EnsureGameClosed()
         {
-            using (var apps = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam\Apps"))
-                if (apps != null) foreach (string app in apps.GetSubKeyNames()) using (var key = apps.OpenSubKey(app))
-                    if (Convert.ToInt32(key.GetValue("Running", 0)) != 0) throw new InvalidOperationException("请先退出 Steam 中正在运行的游戏，再载入或卸载。");
+            // Steam's registry Running flags can remain set after a game exits.
+            // Check actual Endfield/launcher processes here; StopSteam must still
+            // complete normally before any Steam installation files are changed.
             foreach (string name in new[] { "Endfield", "Games", "Launcher" }) foreach (var p in Process.GetProcessesByName(name)) using (p)
                 throw new InvalidOperationException("请先完全退出国服游戏与鹰角启动器（包括托盘），再操作。");
         }
