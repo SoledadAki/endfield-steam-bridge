@@ -11,10 +11,13 @@ try {
     $source = Join-Path $stage 'source'
     New-Item -ItemType Directory -Path $binary,$source | Out-Null
     Copy-Item -LiteralPath (Join-Path $dist 'EndfieldSteamBridge.exe') -Destination $binary
-    foreach ($name in @('README.md','LICENSE')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $binary }
+    $adminGuide = Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Extension -eq '.txt' } | Select-Object -First 1
+    if ($null -eq $adminGuide) { throw 'Administrator guide missing.' }
+    Copy-Item -LiteralPath $adminGuide.FullName -Destination $binary
     foreach ($name in @('src','tests','assets','app.manifest','build.ps1','test.ps1','package.ps1','README.md','LICENSE','.gitignore','EndfieldSteamBridge.csproj')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $source -Recurse
     }
+    Copy-Item -LiteralPath $adminGuide.FullName -Destination $source
     $binaryZip = Join-Path $dist "EndfieldSteamBridge-$version-win-x64.zip"
     $sourceZip = Join-Path $dist "EndfieldSteamBridge-$version-source.zip"
     Compress-Archive -Path (Join-Path $binary '*') -DestinationPath $binaryZip -Force

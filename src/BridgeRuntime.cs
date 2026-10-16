@@ -44,8 +44,14 @@ internal static class BridgeRuntime
     public static int Run()
     {
         Config = App.Load<RuntimeConfig>(App.ConfigPath);
-        if (Environment.GetEnvironmentVariable("SteamAppId") != App.AppId.ToString())
-            throw new InvalidOperationException("请从 Steam 库中的《明日方舟：终末地》开始游戏。");
+        string appId = Environment.GetEnvironmentVariable("SteamAppId");
+        string gameId = Environment.GetEnvironmentVariable("SteamGameId");
+        bool installedBridge = IsInstalledBridge();
+        bool steamRunning = ConfiguredSteamRunning();
+        Log("launch", "SteamAppId=" + (appId ?? "<missing>") + "; SteamGameId=" + (gameId ?? "<missing>") +
+            "; installedBridge=" + installedBridge + "; steamRunning=" + steamRunning);
+        if (!AcceptSteamLaunch(appId, gameId, installedBridge))
+            throw new InvalidOperationException("尚未找到有效的载入记录。请打开 Endfield Steam Bridge 重新载入，再从 Steam 游戏库开始游戏。");
         bool created;
         using (var mutex = new Mutex(true, @"Local\SteamEndfieldCNBridge", out created))
         {
@@ -57,6 +63,33 @@ internal static class BridgeRuntime
     {
         Config = App.Load<RuntimeConfig>(App.ConfigPath);
         return Assist();
+    }
+    internal static bool AcceptSteamLaunch(string appId, string gameId, bool installedBridge)
+    {
+        // A managed installation is sufficient. Steam's environment and process
+        // visibility can vary with offline mode, elevation and inherited values.
+        string expected = App.AppId.ToString();
+        return installedBridge || String.Equals((appId ?? "").Trim(), expected, StringComparison.Ordinal) ||
+            String.Equals((gameId ?? "").Trim(), expected, StringComparison.Ordinal);
+    }
+    private static bool IsInstalledBridge()
+    {
+        if (!File.Exists(App.StatePath)) return false;
+        var state = App.Load<Installation>(App.StatePath);
+        return state.Phase == "enabled" && Detection.Same(state.SteamRoot, Config.SteamRoot) &&
+            Detection.Same(Application.ExecutablePath, Path.Combine(state.BridgeDirectory, state.Executable));
+    }
+    private static bool ConfiguredSteamRunning()
+    {
+        // Already-installed bridges also support Steam offline mode and launches
+        // where app environment variables were lost. No online login probe here.
+        string steamExe = Path.Combine(Config.SteamRoot, "steam.exe");
+        foreach (var process in Process.GetProcessesByName("steam"))
+            using (process)
+            {
+                if (Detection.Same(ImagePath(process.Id), steamExe)) return true;
+            }
+        return false;
     }
     private static bool SessionPath(string path)
     {
@@ -93,6 +126,9 @@ internal static class BridgeRuntime
                     WorkingDirectory = Path.GetDirectoryName(Launcher), UseShellExecute = false
                 };
                 info.EnvironmentVariables["QTWEBENGINE_REMOTE_DEBUGGING"] = "127.0.0.1:" + Port;
+                // Restore only the app identifiers after verifying this Steam launch.
+                info.EnvironmentVariables["SteamAppId"] = App.AppId.ToString();
+                info.EnvironmentVariables["SteamGameId"] = App.AppId.ToString();
                 // Keep the environment Steam assigned to this official app entry.
                 using (var launcher = Process.Start(info))
                 {
@@ -196,37 +232,44 @@ internal static class BridgeRuntime
             // No user/system environment settings or launcher files are changed.
             string endpoint;
             Status(request, "waiting", "等待国服开始游戏按钮。");
-            var deadline = DateTime.UtcNow.AddMinutes(2);
+            var deadline = DateTime.UtcNow.AddMinutes(15);
+            var nextClick = DateTime.MinValue;
             string lastState = "等待游戏页面";
             while (DateTime.UtcNow < deadline && BridgeAlive(request))
             {
                 if (GameRunning()) { Status(request, "started", "已检测到国服。"); return 0; }
                 endpoint = FindGamePage(Port, Launcher, Channel);
                 if (endpoint == null) { Thread.Sleep(500); continue; }
-                using (var cdp = new Cdp(endpoint))
+                try
                 {
-                    while (DateTime.UtcNow < deadline && BridgeAlive(request))
+                    using (var cdp = new Cdp(endpoint))
                     {
-                        if (GameRunning()) { Status(request, "started", "已检测到国服。"); return 0; }
-                        // DOM click follows the launcher's own React/native event path.
-                        // Exact CN app identity, ready label and overlay hit-test must all match.
-                        string state = cdp.Evaluate(Channel.StartScript(true));
-                        if (state != lastState) { Log("assist", "按钮状态：" + state); lastState = state; }
-                        if (state == "clicked")
+                        while (DateTime.UtcNow < deadline && BridgeAlive(request))
                         {
-                            Status(request, "clicked", "已自动触发" + Channel.Name + "开始游戏按钮。");
-                            var gameDeadline = DateTime.UtcNow.AddMinutes(2);
-                            while (DateTime.UtcNow < gameDeadline && BridgeAlive(request))
+                            if (GameRunning()) { Status(request, "started", "已检测到国服。"); return 0; }
+                            // Recheck the current page after navigation; only the
+                            // selected game's ready, uncovered button is clicked.
+                            string state = cdp.Evaluate(Channel.StartScript(DateTime.UtcNow >= nextClick));
+                            if (state != lastState) { Log("assist", "按钮状态：" + state); lastState = state; }
+                            if (state == "wrong-page") break;
+                            if (state == "clicked")
                             {
-                                if (GameRunning()) { Status(request, "started", "自动启动成功，检测到国服。"); return 0; }
-                                Thread.Sleep(500);
+                                Status(request, "clicked", "已自动触发" + Channel.Name + "开始游戏按钮。");
+                                // Allow time for the launcher to change state. If
+                                // it returns to ready without a game, retry later.
+                                nextClick = DateTime.UtcNow.AddSeconds(15);
                             }
-                            if (!BridgeAlive(request)) return 0;
-                            throw new TimeoutException("已点击开始游戏，但尚未检测到国服。请查看启动器中的更新、提示或登录要求。");
+                            Thread.Sleep(700);
                         }
-                        Thread.Sleep(700);
                     }
                 }
+                catch (Exception error)
+                {
+                    if (!(error is IOException) && !(error is WebSocketException) && !(error is OperationCanceledException)) throw;
+                    string state = "页面重连：" + error.Message;
+                    if (state != lastState) { Log("assist", state); lastState = state; }
+                }
+                Thread.Sleep(500);
             }
             if (!BridgeAlive(request)) return 0;
             throw new TimeoutException("自动开始等待超时，最后状态：" + lastState + "。\n请处理启动器中的更新或弹窗，再手动点击开始游戏；Steam 仍会正常计时。");

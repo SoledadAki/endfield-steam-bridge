@@ -16,7 +16,10 @@ namespace EndfieldSteamBridge
         {
             if (args.Length == 2 && args[0] == "--export-scripts")
             {
-                App.Save(args[1], new Dictionary<string, string> { { "official", GameChannel.Official.StartScript(true) }, { "bilibili", GameChannel.Bilibili.StartScript(true) } }); return 0;
+                App.Save(args[1], new Dictionary<string, string> {
+                    { "official", GameChannel.Official.StartScript(true) }, { "bilibili", GameChannel.Bilibili.StartScript(true) },
+                    { "officialReady", GameChannel.Official.StartScript(false) }, { "bilibiliReady", GameChannel.Bilibili.StartScript(false) }
+                }); return 0;
             }
             if (args.Length == 4 && args[0] == "--launcher-check")
             {
@@ -31,6 +34,18 @@ namespace EndfieldSteamBridge
             try
             {
                 ChannelTests(root);
+                Check(BridgeRuntime.AcceptSteamLaunch("4732690", null, false), "accept normal Steam app identity");
+                Check(BridgeRuntime.AcceptSteamLaunch(null, "4732690", false), "accept SteamGameId when SteamAppId is missing");
+                Check(BridgeRuntime.AcceptSteamLaunch("0", "4732690", false), "accept SteamGameId when SteamAppId is zero");
+                Check(BridgeRuntime.AcceptSteamLaunch(null, null, true), "accept managed installation without environment or Steam process access");
+                Check(BridgeRuntime.AcceptSteamLaunch("0", "0", true), "accept managed installation with zero identities");
+                Check(BridgeRuntime.AcceptSteamLaunch("480", null, true), "accept managed installation with inherited app identity");
+                Check(BridgeRuntime.AcceptSteamLaunch("480", "123", true), "accept managed installation with both identities stale");
+                Check(BridgeRuntime.AcceptSteamLaunch("4732690", "480", false), "accept expected app identity despite conflicting game identity");
+                Check(BridgeRuntime.AcceptSteamLaunch("480", "4732690", false), "accept expected game identity despite conflicting app identity");
+                Check(BridgeRuntime.AcceptSteamLaunch(" 4732690 ", null, false), "trim Steam identity whitespace");
+                Check(!BridgeRuntime.AcceptSteamLaunch(null, null, false), "reject unmanaged launch without any Steam identity");
+                Check(!BridgeRuntime.AcceptSteamLaunch("480", "123", false), "reject unmanaged launch with unrelated identities");
                 var vdf = KeyValues.Parse("//comment\n\"root\" { \"path\" \"D:\\\\游戏\\\\Endfield\" \"a\" { \"b\" \"quoted\\\"text\" } }");
                 var roundtrip = KeyValues.Parse(KeyValues.Render(vdf));
                 Check(KeyValues.String(KeyValues.Child(roundtrip, "root"), "path") == @"D:\游戏\Endfield", "VDF Unicode path roundtrip");

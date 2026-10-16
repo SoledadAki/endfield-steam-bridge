@@ -74,10 +74,15 @@ namespace EndfieldSteamBridge
                     p.get('channel') !== " + App.Json.Serialize(Number) + @" || p.get('sub_channel') !== " + App.Json.Serialize(Number) + @" ||
                     p.get('launcher_channel_name') !== " + App.Json.Serialize(Id) + @") return 'wrong-page';
                 const visible = e => !!(e.offsetWidth && e.offsetHeight && e.getClientRects().length);
-                const nodes = Array.from(document.querySelectorAll('.clamp-text-2')).filter(visible);
-                const ready = nodes.filter(e => e.textContent.trim() === '开始游戏');
+                const nodes = Array.from(document.querySelectorAll('.clamp-text-2,button,[role=button],.cursor-pointer')).filter(visible);
+                const ready = [];
+                for (const node of nodes) {
+                    if (node.textContent.replace(/\s/g, '') !== '开始游戏') continue;
+                    const target = node.closest('button,[role=button],.cursor-pointer');
+                    if (target && !ready.some(e => e.target === target)) ready.push({ node, target });
+                }
                 if (ready.length !== 1) return 'not-ready: ' + nodes.map(e => e.textContent.trim()).join(' / ').slice(0, 180);
-                const e = ready[0], target = e.closest('.cursor-pointer');
+                const e = ready[0].node, target = ready[0].target;
                 if (!target || target.closest('.cursor-not-allowed,[disabled],[aria-disabled=true]')) return 'disabled';
                 const r = e.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
                 if (!top || !target.contains(top)) return 'covered';

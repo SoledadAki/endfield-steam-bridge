@@ -2,14 +2,17 @@
 
 让《明日方舟：终末地》官服或 Bilibili 服通过 Steam 游戏库启动，无需下载国际服。
 
-下载程序：进入本仓库的 **Releases**，下载 `EndfieldSteamBridge-0.2.1-win-x64.zip`，解压运行 `EndfieldSteamBridge.exe`。
+下载程序：进入本仓库的 **Releases**，下载 `EndfieldSteamBridge-0.2.3-win-x64.zip`，解压运行 `EndfieldSteamBridge.exe`。
 
 ## 主要功能
 
-- 检测当前 Steam 账号是否拥有终末地，以及本机官服 / Bilibili 服客户端。
-- 选择服务器后，一键载入，自动打开对应启动器并开始游戏。
-- 支持 Steam 游玩时长、Shift+Tab 叠加层和 F12 截图。
-- 一键撤回载入；原本没下载国际服，恢复 Steam 的“安装”状态。
+检测当前 Steam 账号是否拥有终末地，以及本机官服 / Bilibili 服客户端。
+
+选择服务器后，一键载入，自动打开对应启动器并开始游戏。
+
+支持 Steam 游玩时长、Shift+Tab 叠加层和 F12 截图。
+
+一键撤回载入；原本没下载国际服，恢复 Steam 的“安装”状态。
 
 ## 简单使用
 

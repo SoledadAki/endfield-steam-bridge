@@ -19,8 +19,9 @@
     <Reference Include="System.Windows.Forms" /><Reference Include="System.Web.Extensions" /><Reference Include="System.Management" />
     <Compile Include="src\*.cs" />
     <EmbeddedResource Include="assets\background.png"><LogicalName>EndfieldSteamBridge.Background</LogicalName></EmbeddedResource>
+    <EmbeddedResource Include="LICENSE"><LogicalName>EndfieldSteamBridge.License</LogicalName></EmbeddedResource>
     <None Include="assets\EndfieldSteamBridge.ico" />
-    <None Include="app.manifest" /><None Include="README.md" /><None Include="LICENSE" />
+    <None Include="app.manifest" /><None Include="README.md" /><None Include="请以管理员身份运行程序.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
