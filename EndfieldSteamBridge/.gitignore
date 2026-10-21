@@ -1,0 +1,10 @@
+dist/
+bin/
+obj/
+.vs/
+*.user
+*-local.json
+diagnose-restored.json
+integration-*.json
+preview*.png
+*.log
