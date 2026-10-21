@@ -8,8 +8,8 @@
 
 | 版本 | 支持的游戏 | 下载 |
 | --- | --- | --- |
-| 标准版 | 终末地官服 / Bilibili 服 | [标准版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.4/EndfieldSteamBridge_v0.2.4_%E6%A0%87%E5%87%86%E7%89%88.zip) |
-| 官服终末地+明日方舟双启动特别版 | 终末地官服 + 明日方舟官服 | [双启动特别版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.4/EndfieldSteamBridge_v0.2.4_%E5%AE%98%E6%9C%8D%E7%BB%88%E6%9C%AB%E5%9C%B0%2B%E6%98%8E%E6%97%A5%E6%96%B9%E8%88%9F%E5%8F%8C%E5%90%AF%E5%8A%A8%E7%89%B9%E5%88%AB%E7%89%88.zip) |
+| 标准版 | 终末地官服 / Bilibili 服 | [标准版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.4/EndfieldSteamBridge_v0.2.4_standard.zip) |
+| 官服终末地+明日方舟双启动特别版 | 终末地官服 + 明日方舟官服 | [双启动特别版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.4/EndfieldSteamBridge_v0.2.4_dual.zip) |
 
 标准版运行 `EndfieldSteamBridge.exe`，双启动特别版运行 `EndfieldArknightsBridge.exe`。两个版本均为 Windows x64 程序包。
 
