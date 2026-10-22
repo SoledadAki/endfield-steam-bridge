@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -39,7 +39,7 @@ namespace EndfieldSteamBridge
                     if (args[0] == "--enable") InstallService.Enable(Detection.Scan(null, null, args.Length == 3 ? args[2] : null), progress); else InstallService.Restore(progress);
                     App.Save(args[1], new { success = true, message = "completed" }); return 0;
                 }
-                catch (Exception e) { App.Save(args[1], new { success = false, message = e.ToString() }); return 1; }
+                catch (Exception e) { MessageBox.Show(e.Message, "操作未完成", MessageBoxButtons.OK, MessageBoxIcon.Error); App.Save(args[1], new { success = false, message = "操作未完成，错误已在窗口显示。" }); return 1; }
             }
             try
             {

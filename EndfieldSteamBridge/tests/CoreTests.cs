@@ -14,6 +14,8 @@ namespace EndfieldSteamBridge
         { bool threw = false; try { action(); } catch (IOException) { threw = true; } catch (InvalidOperationException) { threw = true; } Check(threw, message); }
         private static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--run-task") { ScheduledTasks.Run(args[1]); return 0; }
+            if (args.Length >= 1 && args[0] == "--scheduler-smoke") return SchedulerSmoke(args.Length == 2 ? args[1] : null);
             if (args.Length == 2 && args[0] == "--export-scripts")
             {
                 App.Save(args[1], new Dictionary<string, string> {
@@ -36,6 +38,8 @@ namespace EndfieldSteamBridge
                 ChannelTests(root);
                 DetectionAutoFillTests(root);
                 WindowsSettingsTests(root);
+                Check(ScheduledTasks.Describe("创建", new System.Runtime.InteropServices.COMException("service unavailable", unchecked((int)0x80041315))).Contains("Task Scheduler"), "scheduler service failure gives actionable advice");
+                Check(ScheduledTasks.Describe("创建", new System.Runtime.InteropServices.COMException("unspecified", unchecked((int)0x80004005))).Contains("0x80004005"), "scheduler preserves original HRESULT");
                 Check(BridgeRuntime.AcceptSteamLaunch("4732690", null, false), "accept normal Steam app identity");
                 Check(BridgeRuntime.AcceptSteamLaunch(null, "4732690", false), "accept SteamGameId when SteamAppId is missing");
                 Check(BridgeRuntime.AcceptSteamLaunch("0", "4732690", false), "accept SteamGameId when SteamAppId is zero");
@@ -181,6 +185,38 @@ namespace EndfieldSteamBridge
             Directory.CreateDirectory(Path.Combine(folder, "U8Data", "config")); File.WriteAllText(Path.Combine(folder, "U8Data", "config", "config.gryph"), "fixture");
             File.WriteAllText(Path.Combine(folder, "u8_channel.dll"), "MZ/" + channel.SdkMarker);
             return game;
+        }
+        private static int SchedulerSmoke(string mediumLauncher)
+        {
+            string root = Path.Combine(Path.GetTempPath(), "Bridge任务 空格 & " + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            string name = App.TaskName + "-Test-" + Guid.NewGuid().ToString("N");
+            string marker = Path.Combine(root, "ran.txt"), script = Path.Combine(root, "run.vbs");
+            File.WriteAllText(script, "Set f = CreateObject(\"Scripting.FileSystemObject\").CreateTextFile(\"" + marker.Replace("\"", "\"\"") + "\", True)\r\nf.Write \"ok\"\r\nf.Close", Encoding.Unicode);
+            string xml = InstallService.AssistantTaskXml(Path.Combine(Environment.SystemDirectory, "wscript.exe"), root)
+                .Replace("<Arguments>--assist</Arguments>", "<Arguments>" + System.Security.SecurityElement.Escape("//B //NoLogo " + Arguments.Quote(script)) + "</Arguments>");
+            try
+            {
+                ScheduledTasks.Register(name, xml);
+                ScheduledTasks.Register(name, xml);
+                Check(true, "native task create/update accepts Unicode, spaces and XML-sensitive paths");
+                if (mediumLauncher == null) ScheduledTasks.Run(name);
+                else {
+                    using(var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(mediumLauncher,
+                        "--start-medium " + Arguments.Quote(System.Reflection.Assembly.GetExecutingAssembly().Location) + " --run-task " + Arguments.Quote(name)) { UseShellExecute = false, CreateNoWindow = true })) process.WaitForExit();
+                }
+                var deadline = DateTime.UtcNow.AddSeconds(15);
+                while(!File.Exists(marker) && DateTime.UtcNow < deadline) System.Threading.Thread.Sleep(100);
+                Check(File.Exists(marker), "native task Run executes the registered helper" + (mediumLauncher == null ? "" : " from a Medium process"));
+                ScheduledTasks.Delete(name); ScheduledTasks.Delete(name);
+                Check(true, "native task delete treats only missing task as already deleted");
+                bool specific = false;
+                try { ScheduledTasks.Register(name, "<invalid/>"); }
+                catch(InvalidOperationException error) { specific = error.InnerException is System.Runtime.InteropServices.COMException && error.Message.Contains("0x800"); Console.WriteLine(error.Message); }
+                Check(specific, "task API failure keeps exact system HRESULT in displayed message");
+                return 0;
+            }
+            finally { ScheduledTasks.Delete(name); Directory.Delete(root, true); }
         }
         private static void WindowsSettingsTests(string root)
         {

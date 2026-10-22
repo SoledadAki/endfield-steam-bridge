@@ -99,11 +99,7 @@ internal static class BridgeRuntime
         }
         WriteJson(RequestPath, request);
         Status(request, "broker-waiting", "等待管理员辅助程序启动。");
-        using (var task = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "schtasks.exe"), "/run /tn " + Arguments.Quote(TaskName)) { UseShellExecute = false, CreateNoWindow = true }))
-        {
-            task.WaitForExit();
-            if (task.ExitCode != 0) throw new InvalidOperationException("无法启动管理员辅助程序。");
-        }
+        ScheduledTasks.Run(TaskName);
         bool brokerStarted = false;
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (true)
@@ -115,14 +111,14 @@ internal static class BridgeRuntime
                 {
                     string state = Convert.ToString(status["state"]);
                     if (state == "finished") return 0;
-                    if (state == "broker-error") throw new InvalidOperationException(Convert.ToString(status["message"]));
+                    if (state == "broker-error") return 1; // The elevated helper already showed the error.
                 }
                 var current = Json.Deserialize<Request>(File.ReadAllText(RequestPath));
                 if (current.Id == request.Id && current.BrokerPid > 0)
                 {
                     brokerStarted = true;
                     if (CreationTicks(current.BrokerPid) != current.BrokerStartTicks)
-                        throw new InvalidOperationException("管理员辅助程序已退出，请查看 bridge.log。");
+                        throw new InvalidOperationException("管理员辅助程序意外退出。请重新载入后再试；若仍失败，请将此提示截图反馈。");
                 }
             }
             catch (IOException) { }
@@ -152,10 +148,10 @@ internal static class BridgeRuntime
             WriteJson(RequestPath, request);
             Thread.Sleep(500);
             int result = Bridge(request);
-            Status(request, result == 0 ? "finished" : "broker-error", result == 0 ? "本轮游戏已退出。" : "游戏启动失败，请查看 bridge.log。");
+            Status(request, result == 0 ? "finished" : "broker-error", result == 0 ? "本轮游戏已退出。" : "游戏启动未完成。");
             return result;
         }
-        catch (Exception error) { Log("launch", error.ToString()); Status(request, "broker-error", error.Message); return 1; }
+        catch (Exception error) { MessageBox.Show(error.Message, "Endfield Steam Bridge", MessageBoxButtons.OK, MessageBoxIcon.Error); Status(request, "broker-error", error.Message); return 1; }
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr LoadLibraryEx(string file, IntPtr reserved, int flags);
@@ -262,16 +258,7 @@ internal static class BridgeRuntime
                 }
                 if (owner == null)
                 {
-                using (var task = Process.Start(new ProcessStartInfo
-                {
-                    FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "schtasks.exe"),
-                    Arguments = "/run /tn \"" + TaskName + "\"",
-                    UseShellExecute = false, CreateNoWindow = true
-                }))
-                {
-                    task.WaitForExit();
-                    if (task.ExitCode != 0) throw new InvalidOperationException("无法运行自动启动任务。请重新载入国服。");
-                }
+                    ScheduledTasks.Run(TaskName);
                 }
                 else
                 {
@@ -283,7 +270,7 @@ internal static class BridgeRuntime
                 while (!GameRunning())
                 {
                     TrackLaunchers(originalLaunchers, ownedLaunchers);
-                    if (DateTime.UtcNow >= deadline) throw new TimeoutException("15 分钟内未检测到国服游戏。请查看鹰角启动器与 bridge.log。");
+                    if (DateTime.UtcNow >= deadline) throw new TimeoutException("15 分钟内未检测到国服游戏。请检查鹰角启动器是否需要更新或处理弹窗。");
                     Thread.Sleep(500);
                 }
             }
@@ -708,7 +695,7 @@ internal static class BridgeRuntime
     private static extern bool CloseHandle(IntPtr handle);
     private static void Status(Request request, string state, string message)
     {
-        WriteJson(StatusPath, new { id = request.Id, state = state, message = message, time = DateTime.Now.ToString("s") });
+        WriteJson(StatusPath, new { id = request.Id, state = state });
         Log("assist", message);
     }
     private static void WriteJson(string path, object value)
@@ -717,16 +704,8 @@ internal static class BridgeRuntime
         File.WriteAllText(temp, Json.Serialize(value), new UTF8Encoding(false));
         if (File.Exists(path)) File.Replace(temp, path, null); else File.Move(temp, path);
     }
-    private static void Log(string role, string message)
-    {
-        using (var mutex = new Mutex(false, @"Local\SteamEndfieldBridgeLog"))
-        {
-            try { mutex.WaitOne(); }
-            catch (AbandonedMutexException) { }
-            try { File.AppendAllText(Path.Combine(Root, "bridge.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " [" + role + "] " + message + Environment.NewLine); }
-            finally { mutex.ReleaseMutex(); }
-        }
-    }
+    // Release builds omit these trace calls; no diagnostic files are written.
+    [Conditional("DEBUG")]
+    private static void Log(string role, string message) { Debug.WriteLine(role + ": " + message); }
 }
-
 }

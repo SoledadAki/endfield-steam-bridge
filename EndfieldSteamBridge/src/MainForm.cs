@@ -76,7 +76,7 @@ namespace EndfieldSteamBridge
             var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0) };
             var library = new LinkLabel { Text = "打开 Steam 游戏库", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, Margin = new Padding(0, 0, 22, 0) };
             library.LinkClicked += delegate { Process.Start("steam://nav/games/details/" + App.AppId); };
-            var logs = new LinkLabel { Text = "本地记录与备份", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, Margin = new Padding(0, 0, 22, 0) };
+            var logs = new LinkLabel { Text = "安装备份", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, Margin = new Padding(0, 0, 22, 0) };
             logs.LinkClicked += delegate { Directory.CreateDirectory(App.Home); Process.Start("explorer.exe", Arguments.Quote(App.Home)); };
             var project = new LinkLabel { Text = "项目已开源！喜欢的话请给该项目点个⭐", AutoSize = true, BackColor = Color.Transparent, LinkColor = blue, LinkBehavior = LinkBehavior.HoverUnderline, Cursor = Cursors.Hand, Margin = new Padding(0) };
             project.LinkClicked += delegate { Process.Start(new ProcessStartInfo("https://github.com/SoledadAki/endfield-steam-bridge") { UseShellExecute = true }); };

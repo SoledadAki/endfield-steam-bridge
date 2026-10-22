@@ -15,7 +15,7 @@ namespace EndfieldSteamBridge
         public static readonly string ConfigPath = Path.Combine(Home, "runtime.json");
         public static readonly string RuntimeExe = Path.Combine(Home, "app", "EndfieldSteamBridge.exe");
         public static readonly string FrontendExe = Path.Combine(Home, "app", "EndfieldBridge.exe");
-        public static readonly string LogPath = Path.Combine(Home, "bridge.log");
+
         public static string TaskName { get { return "EndfieldSteamBridge-" + System.Security.Principal.WindowsIdentity.GetCurrent().User.Value; } }
         public static void Save(string path, object value)
         {

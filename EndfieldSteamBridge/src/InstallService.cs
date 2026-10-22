@@ -135,9 +135,8 @@ namespace EndfieldSteamBridge
                 RegisterTask(state.TaskName); taskCreated = true;
                 files.Commit(state);
             }
-            catch (Exception error)
+            catch
             {
-                LogInstall(error.ToString());
                 // Roll back only this installation; Steam Windows settings are untouched.
                 if (taskCreated) DeleteTask(state.TaskName);
                 if (state != null) files.Rollback(state);
@@ -161,8 +160,8 @@ namespace EndfieldSteamBridge
                 DeleteTask(state.TaskName);
                 if (state.SteamStartup != null && state.SteamStartup.TaskName != state.SteamLaunchTaskName) DeleteTask(state.SteamStartup.TaskName);
                 if (!String.IsNullOrEmpty(state.SteamLaunchTaskName)) DeleteTask(state.SteamLaunchTaskName);
-                SteamWindowsSettings.RestoreStartup(state.SteamStartup, LogInstall);
-                SteamWindowsSettings.RestoreCompatibility(state.SteamCompatibility, LogInstall);
+                SteamWindowsSettings.RestoreStartup(state.SteamStartup, progress);
+                SteamWindowsSettings.RestoreCompatibility(state.SteamCompatibility, progress);
                 files.FinishRestore();
                 if (File.Exists(App.ConfigPath)) File.Delete(App.ConfigPath);
             }
@@ -209,43 +208,13 @@ namespace EndfieldSteamBridge
             Thread.Sleep(700);
         }
         private static void RegisterTask(string name)
+        { ScheduledTasks.Register(name, AssistantTaskXml(App.RuntimeExe, App.Home)); }
+        internal static string AssistantTaskXml(string executable, string workingDirectory)
         {
             string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
-            string xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?><Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\"><RegistrationInfo><Description>Endfield Steam Bridge: official launcher assistant and session cleanup.</Description></RegistrationInfo><Triggers/><Principals><Principal id=\"Author\"><UserId>" + sid + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings><Actions Context=\"Author\"><Exec><Command>" + SecurityElement.Escape(App.RuntimeExe) + "</Command><Arguments>--assist</Arguments><WorkingDirectory>" + SecurityElement.Escape(App.Home) + "</WorkingDirectory></Exec></Actions></Task>";
-            RegisterTaskXml(name, xml);
+            string xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?><Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\"><RegistrationInfo><Description>Endfield Steam Bridge: official launcher assistant and session cleanup.</Description></RegistrationInfo><Triggers/><Principals><Principal id=\"Author\"><UserId>" + sid + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings><Actions Context=\"Author\"><Exec><Command>" + SecurityElement.Escape(executable) + "</Command><Arguments>--assist</Arguments><WorkingDirectory>" + SecurityElement.Escape(workingDirectory) + "</WorkingDirectory></Exec></Actions></Task>";
+            return xml;
         }
-        private static void RegisterTaskXml(string name, string xml)
-        {
-            string file = Path.Combine(App.Home, "task.xml"); File.WriteAllText(file, xml, Encoding.Unicode);
-            try { RunTaskCommand("/create /tn " + Arguments.Quote(name) + " /xml " + Arguments.Quote(file) + " /f", false); }
-            finally { if (File.Exists(file)) File.Delete(file); }
-        }
-        private static void DeleteTask(string name)
-        {
-            // A missing task is already uninstalled; query before deleting.
-            if (RunTaskCommand("/query /tn " + Arguments.Quote(name), true) == 0)
-                RunTaskCommand("/delete /tn " + Arguments.Quote(name) + " /f", false);
-        }
-        private static int RunTaskCommand(string arguments, bool allowFailure)
-        {
-            var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "schtasks.exe"), arguments) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            info.EnvironmentVariables.Remove("__COMPAT_LAYER");
-            using (var p = Process.Start(info))
-            {
-                string output = p.StandardOutput.ReadToEnd(); string error = p.StandardError.ReadToEnd(); p.WaitForExit();
-                if (p.ExitCode != 0 && !allowFailure)
-                {
-                    string detail = "计划任务配置失败（退出码 0x" + unchecked((uint)p.ExitCode).ToString("X8") + "）：" + output + error;
-                    LogInstall(detail);
-                    throw new InvalidOperationException(detail + "\n请检查 Windows 的 Task Scheduler 服务是否正常。详细信息已保存到“本地记录与备份”中的 install.log。");
-                }
-                return p.ExitCode;
-            }
-        }
-        private static void LogInstall(string message)
-        {
-            Directory.CreateDirectory(App.Home);
-            File.AppendAllText(Path.Combine(App.Home, "install.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message + Environment.NewLine, Encoding.UTF8);
-        }
+        private static void DeleteTask(string name) { ScheduledTasks.Delete(name); }
     }
 }
