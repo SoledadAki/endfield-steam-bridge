@@ -2,14 +2,14 @@
 
 通过 Steam 启动已有的国服客户端，无需下载 Steam 国际服。支持 Steam 游玩时长、Shift+Tab 叠加层和 F12 截图。
 
-## 下载 v0.2.4
+## 下载 v0.2.5
 
-标准版与双启动特别版在同一个 [Release](https://github.com/SoledadAki/endfield-steam-bridge/releases/tag/v0.2.4) 中发布，按需下载一个即可。
+标准版与双启动特别版在同一个 [Release](https://github.com/SoledadAki/endfield-steam-bridge/releases/tag/v0.2.5) 中发布，按需下载一个即可。
 
 | 版本 | 支持的游戏 | 下载 |
 | --- | --- | --- |
-| 标准版 | 终末地官服 / Bilibili 服 | [标准版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.4/EndfieldSteamBridge_v0.2.4_standard.zip) |
-| 官服明日方舟+终末地特别版 | 终末地官服 + 明日方舟官服 | [双启动特别版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.4/EndfieldSteamBridge_v0.2.4_dual.zip) |
+| 标准版 | 终末地官服 / Bilibili 服 | [标准版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.5/EndfieldSteamBridge_v0.2.5_standard.zip) |
+| 官服明日方舟+终末地特别版 | 终末地官服 + 明日方舟官服 | [双启动特别版](https://github.com/SoledadAki/endfield-steam-bridge/releases/download/v0.2.5/EndfieldSteamBridge_v0.2.5_dual.zip) |
 
 标准版运行 `EndfieldSteamBridge.exe`，双启动特别版运行 `EndfieldArknightsBridge.exe`。两个版本均为 Windows x64 程序包。
 
@@ -21,6 +21,8 @@
 4. 双启动特别版会显示游戏选择界面，可启动终末地官服或明日方舟官服。
 
 双启动特别版中，两款游戏的游玩时长与截图均归入 Steam《明日方舟：终末地》。
+
+国际服发布新版本后，Steam 会提示更新并尝试下载整个国际服。载入后会在登录 Windows 时运行一个后台辅助任务：发现 Steam 标记更新时，若没有运行游戏、启动器或本工具，它会自动重启一次 Steam 并同步版本号，Steam 便保持“开始游戏”，不会下载国际服。也可退出游戏和启动器后，在本工具中点击“同步游戏更新”手动同步。请不要在 Steam 中点击更新。国服本体请照常在鹰角启动器中更新：从 Steam 开始游戏后，若启动器显示需要下载或更新，本工具不会自动点击，请直接在启动器中更新，完成后手动点击开始游戏；关闭启动器即结束 Steam 本次运行。
 
 升级、切换服务器或切换版本前，请退出游戏和启动器，在新版中点击“撤回载入国服”，再重新载入。新版支持恢复旧版载入记录及旧版曾修改的启动设置。
 

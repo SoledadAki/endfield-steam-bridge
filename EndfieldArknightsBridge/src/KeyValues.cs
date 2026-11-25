@@ -77,6 +77,7 @@ namespace EndfieldSteamBridge
         }
         public static Metadata ReadAppInfo(string file)
         {
+            if (!File.Exists(file)) throw new FileNotFoundException("Steam 尚未生成游戏元数据缓存：" + file + "。请在 Steam 中打开终末地的库页面，完全退出 Steam 后重新打开，再重试。若 Steam 不在此目录，请从 Steam 安装目录启动 Steam 后重试。", file);
             using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             using (var r = new BinaryReader(stream, Encoding.UTF8))
             {

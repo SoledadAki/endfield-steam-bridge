@@ -81,6 +81,10 @@ namespace EndfieldSteamBridge
                     const target = node.closest('button,[role=button],.cursor-pointer');
                     if (target && !ready.some(e => e.target === target)) ready.push({ node, target });
                 }
+                const labels = nodes.map(e => e.textContent.replace(/\s/g, ''));
+                // Leave downloads and updates to the user; never click through them.
+                if (!ready.length && labels.some(t => /^(下载游戏|更新游戏|继续下载|继续更新|暂停下载|暂停更新|下载中|更新中|校验中|解压中|安装中|准备更新|准备下载)/.test(t)))
+                    return 'update: ' + labels.join(' / ').slice(0, 180);
                 if (ready.length !== 1) return 'not-ready: ' + nodes.map(e => e.textContent.trim()).join(' / ').slice(0, 180);
                 const e = ready[0].node, target = ready[0].target;
                 if (!target || target.closest('.cursor-not-allowed,[disabled],[aria-disabled=true]')) return 'disabled';

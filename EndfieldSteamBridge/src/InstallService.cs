@@ -82,6 +82,88 @@ namespace EndfieldSteamBridge
             // Keep the state until Task Scheduler cleanup succeeds, so retry is possible.
         }
         public void FinishRestore() { if (File.Exists(StatePath)) File.Delete(StatePath); }
+        // Steam steady-state flags that mean an update is queued, running or paused.
+        private const uint UpdateFlags = 2 | 256 | 512 | 1024;
+        // A new Steam build makes the managed manifest stale, so Steam would download
+        // the international depots into the bridge directory. Point the manifest at the
+        // current public build instead, so Steam treats the bridge as up to date.
+        public string Sync(Installation state, Metadata metadata, string frontend)
+        {
+            ValidateState(state);
+            if (state.Phase != "enabled") throw new InvalidOperationException("上次操作尚未完成，请先点击“撤回载入国服”。");
+            if (!String.Equals(metadata.Executable, state.Executable, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Steam 启动文件已变化，请更新工具后重试。");
+            if (!File.Exists(state.ManifestPath)) throw new IOException("找不到 Steam 安装记录，请先点击“撤回载入国服”后重新载入。");
+            var root = KeyValues.Parse(File.ReadAllText(state.ManifestPath));
+            var acf = KeyValues.Child(root, "AppState");
+            if (acf == null || !String.Equals(KeyValues.String(acf, "installdir"), Path.GetFileName(state.BridgeDirectory), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Steam 安装记录已被其他程序更改，请保留备份并查看使用说明后处理。");
+            string marker = Path.Combine(state.BridgeDirectory, ".endfield-steam-bridge");
+            if (!File.Exists(marker) || File.ReadAllText(marker) != state.Token) throw new IOException("桥接目录标记不匹配，已停止修改：" + state.BridgeDirectory);
+
+            string previous = KeyValues.String(acf, "buildid");
+            var depots = new Dictionary<string, object>();
+            foreach (var depot in metadata.Depots) depots[depot.Key] = new Dictionary<string, object> { { "manifest", depot.Value }, { "size", "0" } };
+            acf["buildid"] = metadata.Build; acf["InstalledDepots"] = depots; acf["StateFlags"] = "4"; acf["UpdateResult"] = "0";
+            foreach (string key in new[] { "BytesToDownload", "BytesDownloaded", "BytesToStage", "BytesStaged", "ScheduledAutoUpdate" }) acf[key] = "0";
+            acf.Remove("TargetBuildID"); acf.Remove("FullValidateAfterNextUpdate");
+            acf["LastUpdated"] = ((long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds).ToString();
+            string pending = state.ManifestPath + ".esb-new";
+            File.WriteAllText(pending, KeyValues.Render(root), new UTF8Encoding(false));
+            try { AtomicCopy(pending, state.ManifestPath); } finally { File.Delete(pending); }
+
+            // Drop Steam's partial international download for this app only.
+            string apps = Path.GetDirectoryName(state.ManifestPath), id = App.AppId.ToString();
+            string downloading = Path.Combine(apps, "downloading");
+            if (Directory.Exists(Path.Combine(downloading, id))) Directory.Delete(Path.Combine(downloading, id), true);
+            if (Directory.Exists(downloading)) foreach (string patch in Directory.GetFiles(downloading, "state_" + id + "_*.patch")) File.Delete(patch);
+            if (Directory.Exists(Path.Combine(apps, "temp", id))) Directory.Delete(Path.Combine(apps, "temp", id), true);
+
+            // A finished Steam update may already have replaced the bridge entry point.
+            string exe = Path.Combine(state.BridgeDirectory, state.Executable);
+            bool repaired = false, haveFrontend = frontend != null && File.Exists(frontend);
+            if (!File.Exists(exe) || (haveFrontend && !SameBytes(exe, frontend)))
+            {
+                if (!haveFrontend) throw new IOException("桥接程序已被 Steam 更新覆盖，且找不到备用副本。请点击“撤回载入国服”后重新载入。");
+                AtomicCopy(frontend, exe); repaired = true;
+            }
+            int extra = Directory.GetFileSystemEntries(state.BridgeDirectory).Count(p => !Detection.Same(p, marker) && !Detection.Same(p, exe));
+
+            var message = new StringBuilder(previous == metadata.Build
+                ? "Steam 缓存中的版本未变化（" + metadata.Build + "），已清除更新标记。若 Steam 仍提示更新，请先打开终末地库页面等待片刻，再同步一次。"
+                : "已同步到 Steam 版本 " + metadata.Build + "，无需下载国际服。");
+            if (repaired) message.Append(" 已修复被覆盖的桥接程序。");
+            if (extra > 0) message.Append(" 桥接目录中有 " + extra + " 项 Steam 下载的国际服文件，可手动删除：" + state.BridgeDirectory);
+            return message.ToString();
+        }
+        // Steam writes a newly published build into the manifest as soon as it learns of it.
+        public static bool UpdateQueued(string manifest, out string target)
+        {
+            target = null;
+            if (!File.Exists(manifest)) return false;
+            var acf = KeyValues.Child(KeyValues.Parse(File.ReadAllText(manifest)), "AppState");
+            if (acf == null) return false;
+            target = KeyValues.String(acf, "TargetBuildID") ?? "";
+            uint flags;
+            if (UInt32.TryParse(KeyValues.String(acf, "StateFlags"), out flags) && (flags & UpdateFlags) != 0) return true;
+            string bytes = KeyValues.String(acf, "BytesToDownload");
+            return !String.IsNullOrEmpty(bytes) && bytes != "0";
+        }
+        // True when Steam wants to download the international client over the bridge.
+        public static bool UpdatePending(Installation state, string frontend, Metadata latest)
+        {
+            if (state == null || state.Phase != "enabled" || !File.Exists(state.ManifestPath)) return false;
+            string target;
+            if (UpdateQueued(state.ManifestPath, out target)) return true;
+            var acf = KeyValues.Child(KeyValues.Parse(File.ReadAllText(state.ManifestPath)), "AppState");
+            if (latest != null && !String.IsNullOrEmpty(latest.Build) && KeyValues.String(acf, "buildid") != latest.Build) return true;
+            string exe = Path.Combine(state.BridgeDirectory, state.Executable ?? "Endfield.exe");
+            return frontend != null && File.Exists(frontend) && (!File.Exists(exe) || !SameBytes(exe, frontend));
+        }
+        private static bool SameBytes(string a, string b)
+        {
+            if (new FileInfo(a).Length != new FileInfo(b).Length) return false;
+            return File.ReadAllBytes(a).SequenceEqual(File.ReadAllBytes(b));
+        }
         private static void AtomicCopy(string source, string target)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(target));
@@ -116,13 +198,16 @@ namespace EndfieldSteamBridge
             bool ready;
             string clientStatus = Detection.ClientStatus(scan.Launcher, scan.Game, scan.ChannelId, out ready);
             if (!ready) throw new InvalidOperationException(clientStatus);
-            var metadata = KeyValues.ReadAppInfo(Path.Combine(scan.SteamRoot, "appcache", "appinfo.vdf"));
             string manifest = FindManifest(scan.SteamRoot);
             bool legacy = IsLegacy(manifest);
             EnsureGameClosed();
             using (var restart = SteamSession.Capture(scan.SteamRoot))
             {
             progress("正在正常退出 Steam…"); StopSteam(scan.SteamRoot);
+            // Steam writes appinfo.vdf on a normal exit; a fresh or cleaned cache only exists afterwards.
+            Metadata metadata;
+            try { metadata = KeyValues.ReadAppInfo(Path.Combine(scan.SteamRoot, "appcache", "appinfo.vdf")); }
+            catch { restart.Start(); throw; }
             var files = new InstallFiles(App.Home); Installation state = null; bool taskCreated = false;
             try
             {
@@ -133,16 +218,19 @@ namespace EndfieldSteamBridge
                 state = files.Prepare(scan.SteamRoot, manifest, App.FrontendExe, metadata, account.SteamId, legacy, scan.ChannelId);
                 App.Save(App.ConfigPath, new RuntimeConfig { ChannelId = state.ChannelId, Launcher = Path.GetFullPath(scan.Launcher), Game = Path.GetFullPath(scan.Game), SteamRoot = scan.SteamRoot, TaskName = state.TaskName });
                 RegisterTask(state.TaskName); taskCreated = true;
+                ScheduledTasks.Register(WatchTaskName, WatchTaskXml(App.RuntimeExe, App.Home));
                 files.Commit(state);
             }
             catch
             {
                 // Roll back only this installation; Steam Windows settings are untouched.
+                DeleteTask(WatchTaskName);
                 if (taskCreated) DeleteTask(state.TaskName);
                 if (state != null) files.Rollback(state);
                 throw;
             }
             finally { restart.Start(); }
+            try { ScheduledTasks.Run(WatchTaskName); } catch (InvalidOperationException) { } // Starts at the next logon otherwise.
             progress("已载入国服。请等待 Steam 启动完成，再从游戏库开始游戏。");
             }
         }
@@ -157,7 +245,7 @@ namespace EndfieldSteamBridge
             {
                 var files = new InstallFiles(App.Home);
                 progress("正在还原 Steam 安装状态…"); files.Restore(state);
-                DeleteTask(state.TaskName);
+                DeleteTask(state.TaskName); DeleteTask(WatchTaskName);
                 if (state.SteamStartup != null && state.SteamStartup.TaskName != state.SteamLaunchTaskName) DeleteTask(state.SteamStartup.TaskName);
                 if (!String.IsNullOrEmpty(state.SteamLaunchTaskName)) DeleteTask(state.SteamLaunchTaskName);
                 SteamWindowsSettings.RestoreStartup(state.SteamStartup, progress);
@@ -167,6 +255,70 @@ namespace EndfieldSteamBridge
             }
             finally { restart.Start(); }
             progress(state.WasInstalled ? "已撤回国服载入，恢复原来的 Steam 客户端。" : "已撤回国服载入，Steam 将恢复为“安装”。");
+            }
+        }
+        internal static string WatchTaskName { get { return App.TaskName + "-update-watch"; } }
+        // Steam flags the manifest when a new international build is published and keeps
+        // showing "Update" until it restarts. Sync then, while no game or manager is open.
+        public static int Watch()
+        {
+            bool created;
+            using (var mutex = new Mutex(true, @"Local\EndfieldSteamBridgeUpdateWatch", out created))
+            {
+                if (!created) return 0;
+                string attempted = null; var retry = DateTime.MinValue;
+                while (File.Exists(App.StatePath))
+                {
+                    Thread.Sleep(3000);
+                    try
+                    {
+                        var state = App.Load<Installation>(App.StatePath);
+                        if (state.TaskName != App.TaskName) return 0;
+                        string target;
+                        if (state.Phase != "enabled" || !InstallFiles.UpdateQueued(state.ManifestPath, out target)) continue;
+                        // A build that is still flagged after one sync needs the manual button.
+                        if (target == attempted || DateTime.UtcNow < retry || Busy()) continue;
+                        attempted = target;
+                        Sync(delegate(string message) { });
+                    }
+                    catch (Exception) { attempted = null; retry = DateTime.UtcNow.AddMinutes(10); }
+                }
+            }
+            return 0;
+        }
+        private static bool Busy()
+        {
+            Mutex manager;
+            if (Mutex.TryOpenExisting(@"Local\EndfieldSteamBridgeManager", out manager)) { manager.Dispose(); return true; }
+            foreach (string name in new[] { "Endfield", "Arknights", "Games", "Launcher" }) foreach (var p in Process.GetProcessesByName(name)) using (p) return true;
+            // Never restart Steam under another running Steam game.
+            if (!SteamRunning()) return false;
+            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
+                return key != null && Convert.ToInt64(key.GetValue("RunningAppID") ?? 0) != 0;
+        }
+        internal static string WatchTaskXml(string executable, string workingDirectory)
+        {
+            string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+            return "<?xml version=\"1.0\" encoding=\"UTF-16\"?><Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\"><RegistrationInfo><Description>Endfield Steam Bridge: keep Steam from downloading the international client after game updates.</Description></RegistrationInfo><Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + sid + "</UserId></LogonTrigger></Triggers><Principals><Principal id=\"Author\"><UserId>" + sid + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings><Actions Context=\"Author\"><Exec><Command>" + SecurityElement.Escape(executable) + "</Command><Arguments>--watch</Arguments><WorkingDirectory>" + SecurityElement.Escape(workingDirectory) + "</WorkingDirectory></Exec></Actions></Task>";
+        }
+        public static void Sync(Action<string> progress)
+        {
+            var state = App.Load<Installation>(App.StatePath);
+            if (state.TaskName != App.TaskName) throw new InvalidOperationException("该载入记录属于其他 Windows 用户，请用原用户操作。");
+            EnsureGameClosed();
+            using (var restart = SteamSession.Capture(state.SteamRoot))
+            {
+            // Steam flushes the latest build metadata to appinfo.vdf on a normal exit.
+            progress("正在正常退出 Steam…"); StopSteam(state.SteamRoot);
+            string summary;
+            try
+            {
+                progress("正在读取 Steam 最新版本并更新安装记录…");
+                var metadata = KeyValues.ReadAppInfo(Path.Combine(state.SteamRoot, "appcache", "appinfo.vdf"));
+                summary = new InstallFiles(App.Home).Sync(state, metadata, App.FrontendExe);
+            }
+            finally { restart.Start(); }
+            progress(summary);
             }
         }
         public static string FindManifest(string steam)

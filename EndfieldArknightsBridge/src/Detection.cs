@@ -9,6 +9,14 @@ namespace EndfieldSteamBridge
     {
         public static string FindSteam()
         {
+            // SteamPath can point at a leftover install after Steam was moved; the running client is authoritative.
+            foreach (var process in System.Diagnostics.Process.GetProcessesByName("steam"))
+                using (process)
+                {
+                    try { string exe = process.MainModule.FileName; if (File.Exists(exe)) return Path.GetDirectoryName(Path.GetFullPath(exe)); }
+                    catch (System.ComponentModel.Win32Exception) { }
+                    catch (InvalidOperationException) { }
+                }
             using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
             {
                 string path = key == null ? null : Convert.ToString(key.GetValue("SteamPath"));
@@ -130,6 +138,18 @@ namespace EndfieldSteamBridge
             if (sameChannel && ValidGame(configGame)) return configGame;
             return DetectGameFromLauncher(launcher);
         }
+        private static bool UpdatePending(Installation state, string steam)
+        {
+            if (state == null || state.Phase != "enabled") return false;
+            Metadata latest = null;
+            try { latest = KeyValues.ReadAppInfo(Path.Combine(steam, "appcache", "appinfo.vdf")); }
+            catch (IOException) { }
+            catch (InvalidDataException) { }
+            try { return InstallFiles.UpdatePending(state, App.FrontendExe, latest); }
+            catch (IOException) { return false; }
+            catch (InvalidDataException) { return false; }
+            catch (UnauthorizedAccessException) { return false; }
+        }
         public static DetectionResult Scan(string launcher, string game, string channelId = null)
         {
             var result = new DetectionResult();
@@ -144,6 +164,7 @@ namespace EndfieldSteamBridge
                 result.Launcher = launcher ?? (sameChannel && ValidLauncher(config.Launcher) ? config.Launcher : FindLauncher(channel.Id));
                 result.Game = ResolveGame(game, config == null ? null : config.Game, sameChannel, result.Launcher);
                 result.GameStatus = ClientStatus(result.Launcher, result.Game, channel.Id, out result.ClientReady);
+                result.UpdatePending = UpdatePending(result.Installation, result.SteamRoot);
                 result.ArknightsLauncher = config != null && GameChannel.IdentifyLauncher(config.ArknightsLauncher) == GameChannel.Official.Id ? config.ArknightsLauncher :
                     channel == GameChannel.Official ? result.Launcher : FindLauncher(GameChannel.Official.Id);
                 result.ArknightsGame = config == null ? null : config.ArknightsGame;

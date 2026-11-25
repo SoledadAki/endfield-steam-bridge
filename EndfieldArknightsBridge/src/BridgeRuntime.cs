@@ -266,11 +266,15 @@ internal static class BridgeRuntime
                     var assistant = new Thread(delegate() { AssistStart(request); }); assistant.IsBackground = true; assistant.Start();
                 }
                 Log("bridge", "等待自动启动国服。");
-                var deadline = DateTime.UtcNow.AddMinutes(15);
+                // Game updates can take any length of time. Wait while this
+                // session's launcher is open; closing it ends the Steam session.
+                var launcherGone = DateTime.MaxValue;
                 while (!GameRunning())
                 {
                     TrackLaunchers(originalLaunchers, ownedLaunchers);
-                    if (DateTime.UtcNow >= deadline) throw new TimeoutException("15 分钟内未检测到国服游戏。请检查鹰角启动器是否需要更新或处理弹窗。");
+                    if (LauncherRunning()) launcherGone = DateTime.MaxValue;
+                    else if (launcherGone == DateTime.MaxValue) launcherGone = DateTime.UtcNow;
+                    else if (DateTime.UtcNow - launcherGone > TimeSpan.FromSeconds(10)) { Log("bridge", "启动器已关闭，结束 Steam 本次运行。"); return 0; }
                     Thread.Sleep(500);
                 }
             }
@@ -373,6 +377,13 @@ internal static class BridgeRuntime
 #endif
                             if (state != lastState) { Log("assist", "按钮状态：" + state); lastState = state; }
                             if (state == "wrong-page") break;
+                            if (state.StartsWith("update:"))
+                            {
+                                // The user updates in the open launcher and starts the
+                                // game there; Steam keeps this session until then.
+                                Status(request, "updating", Channel.Name + "需要更新，已停止自动开始；请在启动器中完成更新后点击开始游戏。");
+                                return 0;
+                            }
                             if (state == "clicked")
                             {
                                 Status(request, "clicked", "已自动触发" + Channel.Name + "开始游戏按钮。");

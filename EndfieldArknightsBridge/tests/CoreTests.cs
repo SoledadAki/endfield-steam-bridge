@@ -110,6 +110,38 @@ namespace EndfieldSteamBridge
                     Throws(() => service.Restore(state), "external manifest changes are preserved for review");
                     File.Copy(state.ManagedManifestBackup, manifest, true); service.Restore(state); service.FinishRestore();
                 }
+                {
+                    string steam = Path.Combine(root, "sync"), home = Path.Combine(root, "sync-data");
+                    string manifest = Path.Combine(steam, "steamapps", "appmanifest_4732690.acf");
+                    var service = new InstallFiles(home); var state = service.Prepare(steam, manifest, exe, metadata, 1, false); service.Commit(state);
+                    Check(!InstallFiles.UpdatePending(state, exe, metadata), "fresh bridge is up to date");
+                    var updated = new Metadata { Executable = "Endfield.exe", Build = "456", Depots = new Dictionary<string, string> { { "4732691", "654" } } };
+                    Check(InstallFiles.UpdatePending(state, exe, updated), "new Steam build is reported as pending");
+                    // Steam queued the international update, began downloading and replaced the entry point.
+                    File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("\"StateFlags\"	\"4\"", "\"StateFlags\"	\"6\""));
+                    Check(InstallFiles.UpdatePending(state, exe, metadata), "queued Steam update is reported as pending");
+                    string target;
+                    Check(InstallFiles.UpdateQueued(manifest, out target), "watcher sees Steam's queued update");
+                    string watch = InstallService.WatchTaskXml(@"C:\Bridge & Tools\EndfieldSteamBridge.exe", root);
+                    Check(watch.Contains("<LogonTrigger>") && watch.Contains("<Arguments>--watch</Arguments>") && watch.Contains("Bridge &amp; Tools") && watch.Contains("<RunLevel>HighestAvailable</RunLevel>"), "update watcher starts at logon with the helper's privileges");
+                    string partial = Path.Combine(steam, "steamapps", "downloading", "4732690", "international.pak");
+                    Directory.CreateDirectory(Path.GetDirectoryName(partial)); File.WriteAllText(partial, "partial");
+                    File.WriteAllText(Path.Combine(steam, "steamapps", "downloading", "state_4732690_4732691.patch"), "patch");
+                    File.WriteAllText(Path.Combine(state.BridgeDirectory, "Endfield.exe"), "international entry");
+                    string summary = service.Sync(state, updated, exe);
+                    var acf = KeyValues.Child(KeyValues.Parse(File.ReadAllText(manifest)), "AppState");
+                    Check(KeyValues.String(acf, "buildid") == "456" && KeyValues.String(acf, "StateFlags") == "4" && KeyValues.String(KeyValues.Child(KeyValues.Child(acf, "InstalledDepots"), "4732691"), "manifest") == "654", "sync points manifest at latest public build");
+                    Check(KeyValues.String(acf, "installdir") == "Endfield Steam CN Bridge", "sync keeps bridge install directory");
+                    Check(!Directory.Exists(Path.GetDirectoryName(partial)) && Directory.GetFiles(Path.Combine(steam, "steamapps", "downloading")).Length == 0, "sync drops partial international download");
+                    Check(File.ReadAllBytes(Path.Combine(state.BridgeDirectory, "Endfield.exe")).SequenceEqual(File.ReadAllBytes(exe)) && summary.Contains("修复"), "sync repairs overwritten bridge entry");
+                    Check(!InstallFiles.UpdatePending(state, exe, updated), "synced bridge is up to date");
+                    Check(!InstallFiles.UpdateQueued(manifest, out target), "watcher stops after sync");
+                    File.WriteAllText(manifest, "\"AppState\" { \"installdir\" \"External game\" }");
+                    Throws(() => service.Sync(state, updated, exe), "sync refuses externally changed manifest");
+                    File.Copy(state.ManagedManifestBackup, manifest, true);
+                    service.Restore(state); service.FinishRestore();
+                    Check(!File.Exists(manifest) && !Directory.Exists(state.BridgeDirectory), "restore after sync removes bridge");
+                }
                 Console.WriteLine("ALL " + count + " CHECKS PASSED"); return 0;
             }
             catch (Exception e) { Console.Error.WriteLine(e); return 1; }

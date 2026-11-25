@@ -7,7 +7,7 @@ namespace EndfieldSteamBridge
 {
     internal static class App
     {
-        public const string Version = "0.2.4";
+        public const string Version = "0.2.5";
         public const uint AppId = 4732690;
         public static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
         public static readonly string Home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EndfieldSteamBridge");
@@ -87,6 +87,7 @@ namespace EndfieldSteamBridge
         public string Game;
         public string GameStatus;
         public Installation Installation;
+        public bool UpdatePending;
         public string Error;
     }
     internal sealed class Metadata

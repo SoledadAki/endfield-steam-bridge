@@ -17,7 +17,7 @@ namespace EndfieldSteamBridge
         private TextBox arknightsGame;
         private Button chooseArknights;
         private string customArknights;
-        private Button enable, restore, refresh, chooseLauncher, chooseGame;
+        private Button enable, restore, sync, refresh, chooseLauncher, chooseGame;
         private DetectionResult current;
         private bool busy, previewRendering;
         public MainForm()
@@ -61,9 +61,13 @@ namespace EndfieldSteamBridge
             installed = MakeLabel("尚未载入", 10, ink); card.Controls.Add(installed, 0, 10);
             chooseLauncher.Click += delegate { Choose(true); }; chooseGame.Click += delegate { Choose(false); };
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(0, 12, 0, 0), Margin = new Padding(0) };
-            enable = MakeButton("一键载入双游戏", 190, true); restore = MakeButton("撤回载入国服", 190, false); refresh = MakeButton("重新检测", 126, false);
-            actions.Controls.AddRange(new Control[] { enable, restore, refresh }); layout.Controls.Add(actions, 0, 4);
-            enable.Click += async delegate { await Mutate(false); }; restore.Click += async delegate { await Mutate(true); }; refresh.Click += async delegate { await RefreshDetection(); };
+            enable = MakeButton("一键载入双游戏", 190, true); restore = MakeButton("撤回载入国服", 190, false); sync = MakeButton("同步游戏更新", 150, false); refresh = MakeButton("重新检测", 126, false);
+            actions.Controls.AddRange(new Control[] { enable, restore, sync, refresh }); layout.Controls.Add(actions, 0, 4);
+            enable.Click += async delegate { await Mutate(report => InstallService.Enable(current, report), "载入完成。等待 Steam 启动完成后，点击终末地的“开始游戏”。"); };
+            restore.Click += async delegate { await Mutate(InstallService.Restore, "已撤回国服载入并恢复 Steam。等待客户端启动后，可检查游戏库按钮。"); };
+            // The summary from the sync itself is the most useful outcome text.
+            sync.Click += async delegate { await Mutate(InstallService.Sync, null); };
+            refresh.Click += async delegate { await RefreshDetection(); };
             status = MakeLabel("首次使用请先登录 Steam，并将《明日方舟：终末地》添加入库。", 9.5f, muted);
             status.Padding = new Padding(0, 5, 0, 0); layout.Controls.Add(status, 0, 5);
             var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Margin = new Padding(0) };
@@ -134,6 +138,7 @@ namespace EndfieldSteamBridge
             bool stateExists = File.Exists(App.StatePath);
             enable.Enabled = !value && !stateExists && current != null && current.Account != null && current.Account.Known && current.Account.Owned && current.ClientReady && current.ArknightsReady;
             restore.Enabled = !value && stateExists;
+            sync.Enabled = !value && stateExists && current != null && current.Installation != null && current.Installation.Phase == "enabled";
         }
         private async Task RefreshDetection()
         {
@@ -167,28 +172,29 @@ namespace EndfieldSteamBridge
             arknightsGame.Text = current.ArknightsReady ? current.ArknightsGame : "未找到明日方舟官服，请选择 Arknights.exe";
             client.Text = current.GameStatus ?? "等待 Steam 检测完成";
             var state = current.Installation;
-            installed.Text = state == null ? "尚未载入。原来的 Steam 游戏文件会保留。" : state.Phase == "enabled" ? "已载入" + GameChannel.Get(state.ChannelId).Name : "上次操作尚未完成，请点击“撤回载入国服”还原。";
-            status.Text = current.Error ?? (a == null || !a.Known ? "请确认 Steam 已在线登录，再点“重新检测”。" : !a.Owned ? "请先在 Steam 商店将终末地免费添加入库，再重新检测。" : "操作时会重启 Steam，请先关闭游戏与启动器。");
+            installed.Text = state == null ? "尚未载入。原来的 Steam 游戏文件会保留。" : state.Phase != "enabled" ? "上次操作尚未完成，请点击“撤回载入国服”还原。"
+                : current.UpdatePending ? "已载入" + GameChannel.Get(state.ChannelId).Name + "  ·  Steam 提示有更新，请勿在 Steam 中下载" : "已载入" + GameChannel.Get(state.ChannelId).Name;
+            installed.ForeColor = current.UpdatePending ? Color.FromArgb(162, 85, 30) : ink;
+            status.Text = current.Error ?? (a == null || !a.Known ? "请确认 Steam 已在线登录，再点“重新检测”。" : !a.Owned ? "请先在 Steam 商店将终末地免费添加入库，再重新检测。"
+                : current.UpdatePending ? "游戏更新后请点击“同步游戏更新”跳过国际服下载，国服请在鹰角启动器中更新。操作时会重启 Steam。" : "操作时会重启 Steam，请先关闭游戏与启动器。");
         }
-        private async Task Mutate(bool uninstall)
+        private async Task Mutate(Action<Action<string>> operation, string done)
         {
             SetBusy(true);
-            Action<string> report = message => { if (!IsDisposed) BeginInvoke((Action)(() => status.Text = message)); };
-            string outcome = null;
+            string last = null;
+            Action<string> report = message => { last = message; if (!IsDisposed) BeginInvoke((Action)(() => status.Text = message)); };
+            string outcome = null; bool succeeded = false;
             try
             {
-                if (uninstall) await Task.Run(() => InstallService.Restore(report));
-                else
-                {
-                    await Task.Run(() => InstallService.Enable(current, report));
-                }
-                outcome = uninstall ? "已撤回国服载入并恢复 Steam。等待客户端启动后，可检查游戏库按钮。" : "载入完成。等待 Steam 启动完成后，点击终末地的“开始游戏”。";
+                await Task.Run(() => operation(report));
+                outcome = done ?? last; succeeded = true;
             }
             catch (Exception e) { outcome = e.Message; MessageBox.Show(this, e.Message, "操作未完成", MessageBoxButtons.OK, MessageBoxIcon.Information); }
             finally
             {
                 if (current == null) current = new DetectionResult();
                 current.Installation = File.Exists(App.StatePath) ? App.Load<Installation>(App.StatePath) : null;
+                if (succeeded) current.UpdatePending = false;
                 Populate(); status.Text = outcome; SetBusy(false);
             }
         }
