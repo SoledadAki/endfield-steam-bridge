@@ -12,6 +12,34 @@ namespace EndfieldSteamBridge
         private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); count++; Console.WriteLine("PASS " + message); }
         private static void Throws(Action action, string message)
         { bool threw = false; try { action(); } catch (IOException) { threw = true; } catch (InvalidOperationException) { threw = true; } Check(threw, message); }
+        // Steam beta appinfo shard (v42): header, index, key string table, data.
+        private static void WriteShard(string file, Dictionary<string, object> root)
+        {
+            var keys = new List<string>(); var body = new MemoryStream(); var w = new BinaryWriter(body);
+            Action<Dictionary<string, object>> write = null;
+            write = d =>
+            {
+                foreach (var p in d)
+                {
+                    int k = keys.IndexOf(p.Key); if (k < 0) { k = keys.Count; keys.Add(p.Key); }
+                    var child = p.Value as Dictionary<string, object>;
+                    w.Write((byte)(child != null ? 0 : 1)); w.Write(k);
+                    if (child != null) write(child); else { w.Write(Encoding.UTF8.GetBytes((string)p.Value)); w.Write((byte)0); }
+                }
+                w.Write((byte)8);
+            };
+            w.Write(new byte[20]); write(root); w.Flush();
+            byte[] entry = body.ToArray();
+            var table = new MemoryStream(); foreach (string k in keys) { byte[] b = Encoding.UTF8.GetBytes(k); table.Write(b, 0, b.Length); table.WriteByte(0); }
+            var index = new MemoryStream(); var x = new BinaryWriter(index);
+            x.Write(730u); x.Write(0u); x.Write(4u); x.Write(5u); x.Write(new byte[5]); // another app's record comes first
+            x.Write(App.AppId); x.Write(4u); x.Write((uint)entry.Length); x.Write(3u); x.Write(new byte[3]); x.Flush();
+            using (var f = new BinaryWriter(File.Create(file)))
+            {
+                foreach (uint v in new uint[] { 0x0756442A, 1, 0x25, 256, 2, (uint)index.Length, (uint)keys.Count, (uint)table.Length, (uint)(4 + entry.Length), 0, 0 }) f.Write(v);
+                f.Write(index.ToArray()); f.Write(table.ToArray()); f.Write(new byte[] { 1, 2, 3, 4 }); f.Write(entry);
+            }
+        }
         private static int Main(string[] args)
         {
             if (args.Length == 2 && args[0] == "--run-task") { ScheduledTasks.Run(args[1]); return 0; }
@@ -125,6 +153,14 @@ namespace EndfieldSteamBridge
                     string noCache = null;
                     try { Detection.ReadAppInfo(Path.Combine(root, "no-steam")); } catch (FileNotFoundException error) { noCache = error.Message; }
                     Check(noCache != null && noCache.Contains("appcache 内容：目录不存在") && noCache.Contains("Steam 测试版：否"), "missing appinfo error explains the Steam cache state");
+                    string beta = Path.Combine(root, "beta-steam"), shard = KeyValues.AppInfoShard(beta, App.AppId);
+                    Directory.CreateDirectory(Path.GetDirectoryName(shard));
+                    WriteShard(shard, new Dictionary<string, object> { { "appinfo", new Dictionary<string, object> {
+                        { "config", new Dictionary<string, object> { { "launch", new Dictionary<string, object> { { "0", new Dictionary<string, object> { { "executable", "Endfield.exe" } } } } } } },
+                        { "depots", new Dictionary<string, object> { { "4732691", new Dictionary<string, object> { { "manifests", new Dictionary<string, object> { { "public", new Dictionary<string, object> { { "gid", "8812" } } } } } } },
+                            { "branches", new Dictionary<string, object> { { "public", new Dictionary<string, object> { { "buildid", "26643802" } } } } } } } } } });
+                    var sharded = Detection.ReadAppInfo(beta);
+                    Check(shard.EndsWith(@"appcache\appinfo\appinfo_25.vdf") && sharded.Build == "26643802" && sharded.Executable == "Endfield.exe" && sharded.Depots["4732691"] == "8812", "Steam beta's sharded appinfo cache is read");
                     string watch = InstallService.WatchTaskXml(@"C:\Bridge & Tools\EndfieldSteamBridge.exe", root);
                     Check(watch.Contains("<LogonTrigger>") && watch.Contains("<Arguments>--watch</Arguments>") && watch.Contains("Bridge &amp; Tools") && watch.Contains("<RunLevel>HighestAvailable</RunLevel>"), "update watcher starts at logon with the helper's privileges");
                     string partial = Path.Combine(steam, "steamapps", "downloading", "4732690", "international.pak");

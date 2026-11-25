@@ -45,7 +45,7 @@ namespace EndfieldSteamBridge
             {
                 if (args.Length == 2 && args[0] == "--probe") { App.Save(args[1], SteamAccount.Probe(Detection.FindSteam())); return 0; }
                 if ((args.Length == 2 || args.Length == 3) && args[0] == "--diagnose") { App.Save(args[1], Detection.Scan(null, null, args.Length == 3 ? args[2] : null)); return 0; }
-                if (args.Length == 2 && args[0] == "--metadata") { App.Save(args[1], KeyValues.ReadAppInfo(Path.Combine(Detection.FindSteam(), "appcache", "appinfo.vdf"))); return 0; }
+                if (args.Length == 2 && args[0] == "--metadata") { App.Save(args[1], Detection.ReadAppInfo(Detection.FindSteam())); return 0; }
                 if (args.Length == 1 && args[0] == "--assist") return BridgeRuntime.RunAssist();
                 if (args.Length == 1 && args[0] == "--watch") return InstallService.Watch();
                 if (args.Length == 2 && args[0] == "--preview-select")

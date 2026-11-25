@@ -44,7 +44,8 @@ namespace EndfieldSteamBridge
         public static Metadata ReadAppInfo(string steam)
         {
             string file = Path.Combine(steam, "appcache", "appinfo.vdf");
-            try { return KeyValues.ReadAppInfo(file); }
+            string shard = KeyValues.AppInfoShard(steam, App.AppId);
+            try { return !File.Exists(file) && File.Exists(shard) ? KeyValues.ReadAppInfoShard(shard) : KeyValues.ReadAppInfo(file); }
             catch (FileNotFoundException error) { throw new FileNotFoundException(error.Message + "\n\n" + AppInfoDiagnostics(steam), file, error); }
         }
         // Lets a screenshot of the error show why the cache is missing.
@@ -166,7 +167,7 @@ namespace EndfieldSteamBridge
         {
             if (state == null || state.Phase != "enabled") return false;
             Metadata latest = null;
-            try { latest = KeyValues.ReadAppInfo(Path.Combine(steam, "appcache", "appinfo.vdf")); }
+            try { latest = ReadAppInfo(steam); }
             catch (IOException) { }
             catch (InvalidDataException) { }
             try { return InstallFiles.UpdatePending(state, App.FrontendExe, latest); }
