@@ -122,6 +122,9 @@ namespace EndfieldSteamBridge
                     Check(InstallFiles.UpdatePending(state, exe, metadata), "queued Steam update is reported as pending");
                     string target;
                     Check(InstallFiles.UpdateQueued(manifest, out target), "watcher sees Steam's queued update");
+                    string noCache = null;
+                    try { Detection.ReadAppInfo(Path.Combine(root, "no-steam")); } catch (FileNotFoundException error) { noCache = error.Message; }
+                    Check(noCache != null && noCache.Contains("appcache 内容：目录不存在") && noCache.Contains("Steam 测试版：否"), "missing appinfo error explains the Steam cache state");
                     string watch = InstallService.WatchTaskXml(@"C:\Bridge & Tools\EndfieldSteamBridge.exe", root);
                     Check(watch.Contains("<LogonTrigger>") && watch.Contains("<Arguments>--watch</Arguments>") && watch.Contains("Bridge &amp; Tools") && watch.Contains("<RunLevel>HighestAvailable</RunLevel>"), "update watcher starts at logon with the helper's privileges");
                     string partial = Path.Combine(steam, "steamapps", "downloading", "4732690", "international.pak");

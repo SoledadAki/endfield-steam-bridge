@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Win32;
 
 namespace EndfieldSteamBridge
@@ -39,6 +40,29 @@ namespace EndfieldSteamBridge
                 }
             }
             return paths;
+        }
+        public static Metadata ReadAppInfo(string steam)
+        {
+            string file = Path.Combine(steam, "appcache", "appinfo.vdf");
+            try { return KeyValues.ReadAppInfo(file); }
+            catch (FileNotFoundException error) { throw new FileNotFoundException(error.Message + "\n\n" + AppInfoDiagnostics(steam), file, error); }
+        }
+        // Lets a screenshot of the error show why the cache is missing.
+        internal static string AppInfoDiagnostics(string steam)
+        {
+            string cache = Path.Combine(steam, "appcache"), listing;
+            try { listing = Directory.Exists(cache) ? String.Join("、", Directory.GetFileSystemEntries(cache).Select(Path.GetFileName).Take(12)) : "目录不存在"; }
+            catch (Exception error) { listing = "无法读取（" + error.Message + "）"; }
+            var registered = new List<string>();
+            using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam"))
+                if (key != null) registered.Add("SteamPath=" + key.GetValue("SteamPath"));
+            foreach (var view in new[] { RegistryView.Registry32, RegistryView.Registry64 })
+                using (var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                using (var key = root.OpenSubKey(@"SOFTWARE\Valve\Steam"))
+                    if (key != null && key.GetValue("InstallPath") != null) registered.Add("InstallPath=" + key.GetValue("InstallPath"));
+            return "诊断信息：appcache 内容：" + (listing.Length == 0 ? "空" : listing) +
+                "；Steam 测试版：" + (File.Exists(Path.Combine(steam, "package", "beta")) ? "是" : "否") +
+                "；注册表：" + (registered.Count == 0 ? "无" : String.Join("，", registered.Distinct()));
         }
         public static bool Same(string a, string b) { return a != null && b != null && String.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase); }
         public static string FindLauncher(string channelId)

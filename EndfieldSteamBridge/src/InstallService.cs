@@ -192,6 +192,8 @@ namespace EndfieldSteamBridge
     {
         public static void Enable(DetectionResult scan, Action<string> progress)
         {
+            // Steam may have been started from another directory since the last scan.
+            if (!Detection.Same(Detection.FindSteam(), scan.SteamRoot)) throw new InvalidOperationException("Steam 目录与检测时不同，请点击“重新检测”后再载入。");
             // Recheck ownership immediately before changing Steam, including account switches.
             var account = SteamAccount.ProbeIsolated(scan.SteamRoot);
             if (!account.Known || !account.Owned) throw new InvalidOperationException(account.Error ?? "当前 Steam 账号尚未拥有《明日方舟：终末地》，请先在商店免费添加入库。");
@@ -206,7 +208,7 @@ namespace EndfieldSteamBridge
             progress("正在正常退出 Steam…"); StopSteam(scan.SteamRoot);
             // Steam writes appinfo.vdf on a normal exit; a fresh or cleaned cache only exists afterwards.
             Metadata metadata;
-            try { metadata = KeyValues.ReadAppInfo(Path.Combine(scan.SteamRoot, "appcache", "appinfo.vdf")); }
+            try { metadata = Detection.ReadAppInfo(scan.SteamRoot); }
             catch { restart.Start(); throw; }
             var files = new InstallFiles(App.Home); Installation state = null; bool taskCreated = false;
             try
@@ -314,7 +316,7 @@ namespace EndfieldSteamBridge
             try
             {
                 progress("正在读取 Steam 最新版本并更新安装记录…");
-                var metadata = KeyValues.ReadAppInfo(Path.Combine(state.SteamRoot, "appcache", "appinfo.vdf"));
+                var metadata = Detection.ReadAppInfo(state.SteamRoot);
                 summary = new InstallFiles(App.Home).Sync(state, metadata, App.FrontendExe);
             }
             finally { restart.Start(); }
