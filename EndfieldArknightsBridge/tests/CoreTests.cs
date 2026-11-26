@@ -161,6 +161,12 @@ namespace EndfieldSteamBridge
                             { "branches", new Dictionary<string, object> { { "public", new Dictionary<string, object> { { "buildid", "26643802" } } } } } } } } } });
                     var sharded = Detection.ReadAppInfo(beta);
                     Check(shard.EndsWith(@"appcache\appinfo\appinfo_25.vdf") && sharded.Build == "26643802" && sharded.Executable == "Endfield.exe" && sharded.Depots["4732691"] == "8812", "Steam beta's sharded appinfo cache is read");
+                    string stale = Path.Combine(beta, "appcache", "appinfo.vdf"); File.WriteAllText(stale, "stale cache");
+                    File.SetLastWriteTimeUtc(stale, File.GetLastWriteTimeUtc(shard).AddDays(-1));
+                    Check(Detection.ReadAppInfo(beta).Build == "26643802", "newer appinfo shard wins over a stale appinfo.vdf");
+                    File.SetLastWriteTimeUtc(stale, File.GetLastWriteTimeUtc(shard).AddDays(1));
+                    bool readFile = false; try { Detection.ReadAppInfo(beta); } catch (InvalidDataException) { readFile = true; }
+                    Check(readFile, "newer appinfo.vdf wins over stale shards");
                     string watch = InstallService.WatchTaskXml(@"C:\Bridge & Tools\EndfieldSteamBridge.exe", root);
                     Check(watch.Contains("<LogonTrigger>") && watch.Contains("<Arguments>--watch</Arguments>") && watch.Contains("Bridge &amp; Tools") && watch.Contains("<RunLevel>HighestAvailable</RunLevel>"), "update watcher starts at logon with the helper's privileges");
                     string partial = Path.Combine(steam, "steamapps", "downloading", "4732690", "international.pak");

@@ -45,7 +45,9 @@ namespace EndfieldSteamBridge
         {
             string file = Path.Combine(steam, "appcache", "appinfo.vdf");
             string shard = KeyValues.AppInfoShard(steam, App.AppId);
-            try { return !File.Exists(file) && File.Exists(shard) ? KeyValues.ReadAppInfoShard(shard) : KeyValues.ReadAppInfo(file); }
+            // After switching Steam between stable and beta the other format's cache stays behind; read the newer one.
+            bool useShard = File.Exists(shard) && (!File.Exists(file) || File.GetLastWriteTimeUtc(shard) > File.GetLastWriteTimeUtc(file));
+            try { return useShard ? KeyValues.ReadAppInfoShard(shard) : KeyValues.ReadAppInfo(file); }
             catch (FileNotFoundException error) { throw new FileNotFoundException(error.Message + "\n\n" + AppInfoDiagnostics(steam), file, error); }
         }
         // Lets a screenshot of the error show why the cache is missing.
